@@ -428,7 +428,7 @@ const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
         address.recipientContactNumber || firstItem.contactNumber || "",
       deliveryAddress: address.address || firstItem.address || "",
       paymentMode: firstItem.paymentMode || "Cash on Delivery",
-      paymentService: "MTN",
+      paymentService: "N/A",
       paymentAccountNumber: firstItem.paymentAccountNumber || "",
       customerAccountType: "Agent",
       geolocation: address.geoLocation || "345",
@@ -1419,7 +1419,7 @@ const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
               >
                 <Select placeholder="Select payment mode">
                   <Option value="Cash on Delivery">Cash on Delivery</Option>
-                  <Option value="Cash">Cash</Option>
+                  <Option value="Pick up">Pick up</Option>
                   <Option value="Mobile Money">Mobile Money</Option>
                   <Option value="Card">Card</Option>
                   <Option value="Bank Transfer">Bank Transfer</Option>
