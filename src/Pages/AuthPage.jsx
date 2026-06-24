@@ -890,7 +890,7 @@ const STYLES = `
     .am-field__input { font-size: 16px; }
 
     .am-btn { height: 52px; font-size: 16px; border-radius: var(--am-radius); }
-    .am-btn svg { width: 20px; height: 20px; }
+    .am-btn svg { width: 20px; height: 20px;  }
 
     .am-toast-wrap {
       top: auto; bottom: 20px;

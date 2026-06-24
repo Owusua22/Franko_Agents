@@ -9,14 +9,25 @@ if (!LAMBDA_BASE_URL) {
   console.error("❌ VITE_LAMBDA_BASE_URL is not defined");
 }
 
+const PUBLIC_ENDPOINTS = [
+  "/Users/CustomerLogin",
+  "/Users/CustomerRefreshToken",
+  "/Users/ForgotPassword",
+  "/Users/ResetPassword",
+  "/Users/Customer-Post",
+];
+
 const safeGetFromStorage = (key) => {
   try {
     const value = localStorage.getItem(key);
+
     if (!value) return null;
+
     if (value === "[object Object]") {
       localStorage.removeItem(key);
       return null;
     }
+
     try {
       return JSON.parse(value);
     } catch {
@@ -31,15 +42,21 @@ const getAuthToken = () => {
   try {
     const user = safeGetFromStorage("user");
     const customer = safeGetFromStorage("customer");
-    
-    // Check user object first, then customer object
-    if (user?.accessToken) return { token: user.accessToken, source: 'user' };
-    if (customer?.accessToken) return { token: customer.accessToken, source: 'customer' };
-    
-    // Check standalone tokens
+
+    if (user?.accessToken) {
+      return { token: user.accessToken, source: "user" };
+    }
+
+    if (customer?.accessToken) {
+      return { token: customer.accessToken, source: "customer" };
+    }
+
     const accessToken = localStorage.getItem("accessToken");
-    if (accessToken) return { token: accessToken, source: 'standalone' };
-    
+
+    if (accessToken) {
+      return { token: accessToken, source: "standalone" };
+    }
+
     return null;
   } catch {
     return null;
@@ -48,78 +65,91 @@ const getAuthToken = () => {
 
 export const isTokenExpired = (token) => {
   if (!token) return true;
-  
+
   try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return true;
-    
+    const parts = token.split(".");
+
+    if (parts.length !== 3) {
+      return true;
+    }
+
     const payload = JSON.parse(atob(parts[1]));
     const exp = payload.exp;
-    
-    if (!exp) return false;
-    
-    const now = Math.floor(Date.now() / 1000);
-    const bufferTime = 60; // 1 minute buffer
-    
-    const isExpired = (exp - bufferTime) <= now;
-    
-    if (isExpired) {
-      console.warn(`⚠️ Token expired at ${new Date(exp * 1000).toLocaleString()}, current time: ${new Date(now * 1000).toLocaleString()}`);
+
+    if (!exp) {
+      return false;
     }
-    
-    return isExpired;
+
+    const now = Math.floor(Date.now() / 1000);
+    const bufferTime = 60;
+
+    const expired = exp - bufferTime <= now;
+
+    if (expired) {
+      console.warn(
+        `⚠️ Token expired at ${new Date(exp * 1000).toLocaleString()}`
+      );
+    }
+
+    return expired;
   } catch (error) {
     console.error("❌ Error decoding token:", error);
     return true;
   }
 };
 
-// Store redirect flag to prevent multiple redirects
 let isRedirecting = false;
 
 const handleUnauthorized = () => {
-  // Prevent multiple redirects
   if (isRedirecting) return;
-  
+
   console.warn("🔐 Session expired or unauthorized - Redirecting to login");
-  
-  // Set redirect flag
+
   isRedirecting = true;
-  
-  // Clear all auth-related data
+
   localStorage.removeItem("user");
   localStorage.removeItem("customer");
   localStorage.removeItem("accessToken");
   localStorage.removeItem("refreshToken");
   localStorage.removeItem("loginTime");
   localStorage.removeItem("lastActivity");
+  localStorage.removeItem("lastActivityTimestamp");
   localStorage.removeItem("userType");
-  
-  // Clear any session storage
+
   sessionStorage.clear();
-  
-  // Dispatch custom event for Redux store updates
-  window.dispatchEvent(new CustomEvent('auth:logout'));
-  
-  // Check if we're already on the login page to prevent redirect loop
+
+  window.dispatchEvent(new CustomEvent("auth:logout"));
+
   const currentPath = window.location.pathname;
-  const isAuthPage = currentPath === '/' || currentPath === '/auth';
-  
+  const isAuthPage = currentPath === "/" || currentPath === "/auth";
+
   if (!isAuthPage) {
-    // Store the intended URL for redirect after login
-    sessionStorage.setItem('redirectAfterLogin', currentPath);
-    
-    // Redirect to login page
+    sessionStorage.setItem("redirectAfterLogin", currentPath);
     window.location.href = "/";
   }
-  
-  // Reset redirect flag after a delay
+
   setTimeout(() => {
     isRedirecting = false;
   }, 2000);
 };
 
-// Check token validity before making requests
+const getRequestEndpoint = (config) => {
+  return config?.params?.endpoint || config?.url || "";
+};
+
+const isPublicEndpoint = (config) => {
+  if (config?.skipAuth === true) return true;
+
+  const requestEndpoint = getRequestEndpoint(config).toLowerCase();
+
+  return PUBLIC_ENDPOINTS.some((endpoint) =>
+    requestEndpoint.includes(endpoint.toLowerCase())
+  );
+};
+
+const cancelRequest = (message) => {
+  return Promise.reject(new axios.CanceledError(message));
+};
 
 const axiosInstance = axios.create({
   baseURL: LAMBDA_BASE_URL,
@@ -130,54 +160,83 @@ const axiosInstance = axios.create({
   },
 });
 
-// Request interceptor
 axiosInstance.interceptors.request.use(
   (config) => {
     config.headers = config.headers || {};
     config.headers[LAMBDA_HEADER_NAME] = LAMBDA_HEADER_VALUE;
 
-    // Check token expiration before making request
     const authData = getAuthToken();
-    
-    if (!config.headers.Authorization && authData) {
-      const { token, source } = authData;
-      
-      // Check if token is expired
-      if (isTokenExpired(token)) {
-        console.warn(`⚠️ Token from ${source} is expired`);
-        handleUnauthorized();
-        
-        // Create a cancel token to abort the request
-        const CancelToken = axios.CancelToken;
-        const source = CancelToken.source();
-        config.cancelToken = source.token;
-        source.cancel('Token expired');
-        
-        return config;
+    const publicEndpoint = isPublicEndpoint(config);
+
+    /**
+     * Important:
+     * Login/register/forgot-password endpoints must be allowed without token.
+     */
+    if (publicEndpoint) {
+      if (config.data instanceof FormData) {
+        delete config.headers["Content-Type"];
+      } else if (
+        config.data &&
+        !config.headers["Content-Type"] &&
+        typeof config.data === "object"
+      ) {
+        config.headers["Content-Type"] = "application/json";
       }
-      
-      config.headers.Authorization = `Bearer ${token}`;
-    } else if (!authData && !config.headers.Authorization) {
-      // No auth data found, but some endpoints might be public
-      // Only redirect for protected routes
-      const publicEndpoints = ['/auth', '/login', '/register', '/public'];
-      const isPublicEndpoint = publicEndpoints.some(endpoint => 
-        config.url?.includes(endpoint)
-      );
-      
-      if (!isPublicEndpoint) {
-        console.warn("⚠️ No auth token found for protected endpoint");
-        handleUnauthorized();
-        
-        // Create a cancel token to abort the request
-        const CancelToken = axios.CancelToken;
-        const source = CancelToken.source();
-        config.cancelToken = source.token;
-        source.cancel('No auth token');
-        
-        return config;
+
+      if (import.meta.env.DEV) {
+        console.log(
+          `📤 PUBLIC ${config.method?.toUpperCase()} ${getRequestEndpoint(config)}`
+        );
       }
+
+      return config;
     }
+
+    /**
+     * Protected endpoint.
+     * If caller supplied Authorization manually, respect it.
+     */
+    if (config.headers.Authorization) {
+      return config;
+    }
+
+    /**
+     * No token found.
+     *
+     * If skipAutoLogout is true, allow request to continue.
+     * This lets customerSlice handle 401 and token refresh.
+     */
+    if (!authData?.token) {
+      if (config.skipAutoLogout === true) {
+        return config;
+      }
+
+      console.warn("⚠️ No auth token found for protected endpoint");
+      handleUnauthorized();
+      return cancelRequest("No auth token");
+    }
+
+    const { token, source } = authData;
+
+    /**
+     * Expired token.
+     *
+     * If skipAutoLogout is true, let request go to backend.
+     * customerSlice can then refresh token after receiving 401.
+     */
+    if (isTokenExpired(token)) {
+      console.warn(`⚠️ Token from ${source} is expired`);
+
+      if (config.skipAutoLogout === true) {
+        config.headers.Authorization = `Bearer ${token}`;
+        return config;
+      }
+
+      handleUnauthorized();
+      return cancelRequest("Token expired");
+    }
+
+    config.headers.Authorization = `Bearer ${token}`;
 
     if (config.data instanceof FormData) {
       delete config.headers["Content-Type"];
@@ -189,12 +248,10 @@ axiosInstance.interceptors.request.use(
       config.headers["Content-Type"] = "application/json";
     }
 
-    config.params = {
-      ...(config.params || {}),
-    };
-
     if (import.meta.env.DEV) {
-      console.log(`📤 ${config.method?.toUpperCase()} ${config.url}`);
+      console.log(
+        `📤 ${config.method?.toUpperCase()} ${getRequestEndpoint(config)}`
+      );
     }
 
     return config;
@@ -205,59 +262,71 @@ axiosInstance.interceptors.request.use(
   }
 );
 
-// Response interceptor
 axiosInstance.interceptors.response.use(
   (response) => {
     if (import.meta.env.DEV) {
-      console.log(`✅ ${response.config.method?.toUpperCase()} ${response.config.url} → ${response.status}`);
+      console.log(
+        `✅ ${response.config.method?.toUpperCase()} ${getRequestEndpoint(
+          response.config
+        )} → ${response.status}`
+      );
     }
-    
-    // Check if the response contains expired token information
-    if (response.data?.tokenExpired || response.data?.sessionExpired) {
+
+    if (
+      response.data?.tokenExpired ||
+      response.data?.sessionExpired
+    ) {
+      if (response.config?.skipAutoLogout === true) {
+        return Promise.reject(new Error("Session expired"));
+      }
+
       handleUnauthorized();
       return Promise.reject(new Error("Session expired"));
     }
-    
+
     return response;
   },
   (error) => {
-    // If the request was cancelled due to token expiration, don't show error
     if (axios.isCancel(error)) {
       console.log("Request cancelled:", error.message);
       return Promise.reject(error);
     }
-    
+
     const status = error.response?.status;
+    const config = error.config || {};
 
     if (import.meta.env.DEV) {
-      console.error(`❌ ${error.config?.method?.toUpperCase()} ${error.config?.url} → ${status || "Network error"}`);
+      console.error(
+        `❌ ${config.method?.toUpperCase()} ${getRequestEndpoint(config)} → ${
+          status || "Network error"
+        }`
+      );
     }
 
-    // Handle 401 Unauthorized
+    /**
+     * Let Redux/customerSlice handle 401 when requested.
+     * This is needed for token refresh logic.
+     */
     if (status === 401) {
-      // Check if token expired from response headers
-      const tokenExpired = error.response?.headers?.['token-expired'] === 'true';
-      const sessionExpired = error.response?.data?.message?.toLowerCase().includes('expired');
-      
-      if (tokenExpired || sessionExpired) {
-        console.warn("🔐 Token expired (from response)");
+      if (config.skipAutoLogout === true) {
+        return Promise.reject(error);
       }
-      
+
       handleUnauthorized();
       return Promise.reject(error);
     }
 
-    // Handle 403 Forbidden (might indicate role change or permission issues)
     if (status === 403) {
-      console.warn("🚫 Forbidden access - possible permission issue");
-      
-      // Check if it's a token-related forbidden
-      if (error.response?.data?.message?.toLowerCase().includes('token')) {
+      console.warn("🚫 Forbidden access");
+
+      if (
+        !config.skipAutoLogout &&
+        error.response?.data?.message?.toLowerCase?.().includes("token")
+      ) {
         handleUnauthorized();
       }
     }
 
-    // Handle other errors
     if (error.code === "ECONNABORTED") {
       console.error("⏱ Request timed out");
     } else if (error.message === "Network Error") {
@@ -272,25 +341,23 @@ axiosInstance.interceptors.response.use(
   }
 );
 
-// Add a method to check token validity
 axiosInstance.checkTokenValidity = () => {
   const authData = getAuthToken();
-  if (!authData) return false;
-  
-  const { token } = authData;
-  return !isTokenExpired(token);
+
+  if (!authData?.token) return false;
+
+  return !isTokenExpired(authData.token);
 };
 
-// Add a method to manually trigger logout
 axiosInstance.logout = () => {
   handleUnauthorized();
 };
 
-// Listen for storage events (for multi-tab support)
-window.addEventListener('storage', (e) => {
-  if (e.key === 'user' || e.key === 'customer' || e.key === 'accessToken') {
+window.addEventListener("storage", (e) => {
+  if (e.key === "user" || e.key === "customer" || e.key === "accessToken") {
     const authData = getAuthToken();
-    if (authData && isTokenExpired(authData.token)) {
+
+    if (authData?.token && isTokenExpired(authData.token)) {
       handleUnauthorized();
     }
   }
