@@ -12,7 +12,7 @@ import {
   message,
   Form,
   Input,
-Tag,
+  Tag,
   Select,
   Row,
   Col,
@@ -29,32 +29,43 @@ import {
   DollarOutlined,
   ShoppingCartOutlined,
   EnvironmentOutlined,
-  FileTextOutlined,
   PrinterOutlined,
   SendOutlined,
+  CheckCircleOutlined,
 } from "@ant-design/icons";
 import { placeOrder } from "../../../Redux/Slice/ctp001Slice";
-import { fetchSalesOrderById, fetchOrderDeliveryAddress } from "../../../Redux/Slice/orderSlice";
+import {
+  fetchSalesOrderById,
+  fetchOrderDeliveryAddress,
+} from "../../../Redux/Slice/orderSlice";
 
 const { Title, Text } = Typography;
 const { Option } = Select;
 
 const BACKEND_BASE_URL = "https://testing.frankotrading.com";
 
-const AgentOrderModal = ({
-  orderId,
-  orderCode,
-  isModalVisible,
-  onClose,
-}) => {
+const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
   const dispatch = useDispatch();
   const { salesOrder, loading, error, deliveryAddress } = useSelector(
     (state) => state.orders
   );
 
+  // ── Get currentCustomerDetails (adjust slice path if needed) ──────────
+  const currentCustomerDetails = useSelector(
+    (state) =>
+      state.customer?.currentCustomerDetails ||
+      state.customers?.currentCustomerDetails ||
+      state.auth?.currentCustomerDetails ||
+      {}
+  );
+  // n1UId is the customerId we send to fulfilment
+  const n1UId = currentCustomerDetails?.n1UId || "";
+
   const [fulfilmentOpen, setFulfilmentOpen] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [sendingToFulfilment, setSendingToFulfilment] = useState(false);
+  // Tracks whether this order was already sent → disables the button
+  const [orderSent, setOrderSent] = useState(false);
   const [fulfilmentForm] = Form.useForm();
 
   useEffect(() => {
@@ -64,7 +75,12 @@ const AgentOrderModal = ({
     }
   }, [dispatch, orderId, isModalVisible]);
 
-  // Reset form when modal opens/closes
+  // Reset "sent" state whenever a new order is opened / modal closes
+  useEffect(() => {
+    setOrderSent(false);
+  }, [orderId, isModalVisible]);
+
+  // Reset form when fulfilment modal closes
   useEffect(() => {
     if (!fulfilmentOpen) {
       fulfilmentForm.resetFields();
@@ -119,11 +135,7 @@ const AgentOrderModal = ({
               <img
                 src={imageUrl}
                 alt={item?.productName || "Product"}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                }}
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
                 onError={handleImageError}
               />
               <div
@@ -133,10 +145,13 @@ const AgentOrderModal = ({
                   display: "none",
                   alignItems: "center",
                   justifyContent: "center",
-                  background: "linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)",
+                  background:
+                    "linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)",
                 }}
               >
-                <ShoppingCartOutlined style={{ color: "#9ca3af", fontSize: "20px" }} />
+                <ShoppingCartOutlined
+                  style={{ color: "#9ca3af", fontSize: "20px" }}
+                />
               </div>
             </>
           ) : (
@@ -150,7 +165,9 @@ const AgentOrderModal = ({
                 background: "linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)",
               }}
             >
-              <ShoppingCartOutlined style={{ color: "#9ca3af", fontSize: "20px" }} />
+              <ShoppingCartOutlined
+                style={{ color: "#9ca3af", fontSize: "20px" }}
+              />
             </div>
           )}
         </div>
@@ -178,10 +195,6 @@ const AgentOrderModal = ({
 
     const order = salesOrder[0];
     const address = deliveryAddress?.[0] || {};
-    const totalAmount = salesOrder.reduce(
-      (total, item) => total + (item.price * item.quantity),
-      0
-    );
     const currentDate = new Date();
 
     return `
@@ -192,252 +205,34 @@ const AgentOrderModal = ({
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Invoice - ${order?.orderCode || orderCode}</title>
         <style>
-          * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-          }
-          
-          body { 
-            font-family: 'Arial', 'Helvetica', sans-serif; 
-            margin: 0;
-            padding: 20px;
-            color: #2d3748;
-            line-height: 1.6;
-            background-color: #ffffff;
-          }
-          
-          .invoice-container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            border-radius: 8px;
-            overflow: hidden;
-          }
-          
-          .header { 
-            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-          }
-          
-          .company-name { 
-            font-size: 32px; 
-            font-weight: bold; 
-            margin-bottom: 8px;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
-          }
-          
-          .company-info { 
-            font-size: 14px; 
-            opacity: 0.9;
-            font-weight: 300;
-          }
-          
-          .invoice-title { 
-            font-size: 36px; 
-            font-weight: bold; 
-            margin: 30px 0;
-            text-align: center;
-            color: #4CAF50;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-          }
-          
-          .content {
-            padding: 30px;
-          }
-          
-          .info-section {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 30px;
-            gap: 30px;
-          }
-          
-          .invoice-info, .customer-info {
-            flex: 1;
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            border-left: 4px solid #4CAF50;
-          }
-          
-          .section-title { 
-            color: #4CAF50; 
-            font-size: 18px; 
-            font-weight: bold; 
-            margin-bottom: 12px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-          }
-          
-          .info-row {
-            margin-bottom: 8px;
-            display: flex;
-            justify-content: space-between;
-          }
-          
-          .info-label {
-            font-weight: 600;
-            color: #495057;
-            min-width: 120px;
-          }
-          
-          .info-value {
-            color: #212529;
-            font-weight: 500;
-          }
-          
-          table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            margin: 20px 0;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            border-radius: 8px;
-            overflow: hidden;
-          }
-          
-          thead {
-            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-          }
-          
-          th { 
-            color: white; 
-            font-weight: bold;
-            padding: 15px 12px;
-            text-align: left;
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          }
-          
-          td { 
-            padding: 15px 12px;
-            border-bottom: 1px solid #e9ecef;
-            font-size: 14px;
-          }
-          
-          tbody tr:nth-child(even) { 
-            background-color: #f8f9fa;
-          }
-          
-          tbody tr:hover {
-            background-color: #e3f2fd;
-            transition: background-color 0.2s ease;
-          }
-          
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: 'Arial', 'Helvetica', sans-serif; margin: 0; padding: 20px; color: #2d3748; line-height: 1.6; background-color: #ffffff; }
+          .invoice-container { max-width: 800px; margin: 0 auto; background: white; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); border-radius: 8px; overflow: hidden; }
+          .header { background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); color: white; padding: 30px; text-align: center; }
+          .company-name { font-size: 32px; font-weight: bold; margin-bottom: 8px; text-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+          .company-info { font-size: 14px; opacity: 0.9; font-weight: 300; }
+          .invoice-title { font-size: 36px; font-weight: bold; margin: 30px 0; text-align: center; color: #4CAF50; text-transform: uppercase; letter-spacing: 2px; }
+          .content { padding: 30px; }
+          .info-section { display: flex; justify-content: space-between; margin-bottom: 30px; gap: 30px; }
+          .invoice-info, .customer-info { flex: 1; background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #4CAF50; }
+          .section-title { color: #4CAF50; font-size: 18px; font-weight: bold; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+          .info-row { margin-bottom: 8px; display: flex; justify-content: space-between; }
+          .info-label { font-weight: 600; color: #495057; min-width: 120px; }
+          .info-value { color: #212529; font-weight: 500; }
+          table { width: 100%; border-collapse: collapse; margin: 20px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; }
+          thead { background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); }
+          th { color: white; font-weight: bold; padding: 15px 12px; text-align: left; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
+          td { padding: 15px 12px; border-bottom: 1px solid #e9ecef; font-size: 14px; }
+          tbody tr:nth-child(even) { background-color: #f8f9fa; }
           .text-right { text-align: right; }
           .text-center { text-align: center; }
-          
-          .total-section {
-            margin-top: 30px;
-            text-align: right;
-          }
-          
-          .subtotal-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #dee2e6;
-            font-size: 14px;
-          }
-          
-          .total-row { 
-            display: flex;
-            justify-content: space-between;
-            font-weight: bold; 
-            font-size: 20px; 
-            color: #4CAF50;
-            padding: 15px 0;
-            border-top: 2px solid #4CAF50;
-            margin-top: 10px;
-          }
-          
-          .footer { 
-            margin-top: 40px; 
-            text-align: center; 
-            color: #6c757d; 
-            font-size: 12px;
-            padding-top: 20px;
-            border-top: 1px solid #dee2e6;
-          }
-          
-          .thank-you {
-            font-size: 16px;
-            color: #4CAF50;
-            font-weight: 600;
-            margin-bottom: 10px;
-          }
-          
-          .watermark {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) rotate(-45deg);
-            font-size: 120px;
-            color: rgba(76, 175, 80, 0.05);
-            font-weight: bold;
-            z-index: -1;
-            pointer-events: none;
-          }
-          
-          @media print {
-            body { 
-              margin: 0;
-              padding: 0;
-              background: white;
-            }
-            
-            .invoice-container {
-              box-shadow: none;
-              border-radius: 0;
-            }
-            
-            .header {
-              background: #4CAF50 !important;
-              -webkit-print-color-adjust: exact;
-            }
-            
-            thead {
-              background: #4CAF50 !important;
-              -webkit-print-color-adjust: exact;
-            }
-            
-            th {
-              color: white !important;
-              -webkit-print-color-adjust: exact;
-            }
-          }
-          
-          @media (max-width: 768px) {
-            .info-section {
-              flex-direction: column;
-              gap: 15px;
-            }
-            
-            .invoice-info, .customer-info {
-              margin-bottom: 0;
-            }
-            
-            table {
-              font-size: 12px;
-            }
-            
-            th, td {
-              padding: 10px 8px;
-            }
-            
-            .company-name {
-              font-size: 24px;
-            }
-            
-            .invoice-title {
-              font-size: 28px;
-            }
-          }
+          .total-section { margin-top: 30px; text-align: right; }
+          .subtotal-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #dee2e6; font-size: 14px; }
+          .total-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 20px; color: #4CAF50; padding: 15px 0; border-top: 2px solid #4CAF50; margin-top: 10px; }
+          .footer { margin-top: 40px; text-align: center; color: #6c757d; font-size: 12px; padding-top: 20px; border-top: 1px solid #dee2e6; }
+          .thank-you { font-size: 16px; color: #4CAF50; font-weight: 600; margin-bottom: 10px; }
+          .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 120px; color: rgba(76, 175, 80, 0.05); font-weight: bold; z-index: -1; pointer-events: none; }
+          @media print { body { margin: 0; padding: 0; background: white; } .invoice-container { box-shadow: none; border-radius: 0; } .header, thead { background: #4CAF50 !important; -webkit-print-color-adjust: exact; } th { color: white !important; -webkit-print-color-adjust: exact; } }
         </style>
       </head>
       <body>
@@ -451,54 +246,40 @@ const AgentOrderModal = ({
               Website: www.frankotrading.com
             </div>
           </div>
-          
           <div class="content">
             <div class="invoice-title">INVOICE</div>
-            
             <div class="info-section">
               <div class="invoice-info">
                 <div class="section-title">Invoice Details</div>
-                <div class="info-row">
-                  <span class="info-label">Order Code:</span>
-                  <span class="info-value">${order?.orderCode || orderCode}</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-label">Order Date:</span>
-                  <span class="info-value">${formatDate(order?.orderDate)}</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-label">Invoice Date:</span>
-                  <span class="info-value">${formatDate(currentDate)}</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-label">Status:</span>
-                  <span class="info-value" style="color: #28a745; font-weight: 600;">Confirmed</span>
-                </div>
+                <div class="info-row"><span class="info-label">Order Code:</span><span class="info-value">${
+                  order?.orderCode || orderCode
+                }</span></div>
+                <div class="info-row"><span class="info-label">Order Date:</span><span class="info-value">${formatDate(
+                  order?.orderDate
+                )}</span></div>
+                <div class="info-row"><span class="info-label">Invoice Date:</span><span class="info-value">${formatDate(
+                  currentDate
+                )}</span></div>
+                <div class="info-row"><span class="info-label">Status:</span><span class="info-value" style="color: #28a745; font-weight: 600;">Confirmed</span></div>
               </div>
-              
               <div class="customer-info">
                 <div class="section-title">Bill To</div>
-                <div class="info-row">
-                  <span class="info-label">Name:</span>
-                  <span class="info-value">${address?.recipientName || 'N/A'}</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-label">Contact:</span>
-                  <span class="info-value">${address?.recipientContactNumber || 'N/A'}</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-label">Address:</span>
-                  <span class="info-value">${address?.address || 'N/A'}</span>
-                </div>
-                ${address?.orderNote ? `
-                  <div class="info-row">
-                    <span class="info-label">Note:</span>
-                    <span class="info-value" style="font-style: italic;">${address.orderNote}</span>
-                  </div>
-                ` : ''}
+                <div class="info-row"><span class="info-label">Name:</span><span class="info-value">${
+                  address?.recipientName || "N/A"
+                }</span></div>
+                <div class="info-row"><span class="info-label">Contact:</span><span class="info-value">${
+                  address?.recipientContactNumber || "N/A"
+                }</span></div>
+                <div class="info-row"><span class="info-label">Address:</span><span class="info-value">${
+                  address?.address || "N/A"
+                }</span></div>
+                ${
+                  address?.orderNote
+                    ? `<div class="info-row"><span class="info-label">Note:</span><span class="info-value" style="font-style: italic;">${address.orderNote}</span></div>`
+                    : ""
+                }
               </div>
             </div>
-            
             <table>
               <thead>
                 <tr>
@@ -532,36 +313,27 @@ const AgentOrderModal = ({
                     <td class="text-right" style="font-weight: 600;">₵${formatPrice(
                       item.price * item.quantity
                     )}</td>
-                  </tr>
-                `
+                  </tr>`
                   )
                   .join("")}
               </tbody>
             </table>
-            
             <div class="total-section">
-              <div class="subtotal-row">
-                <span>Subtotal:</span>
-                <span>₵${formatPrice(
-                  salesOrder.reduce((total, item) => total + (item.price * item.quantity), 0)
-                )}</span>
-              </div>
-              <div class="subtotal-row">
-                <span>Tax (0%):</span>
-                <span>₵0.00</span>
-              </div>
-              <div class="subtotal-row">
-                <span>Shipping:</span>
-                <span>₵0.00</span>
-              </div>
-              <div class="total-row">
-                <span>TOTAL AMOUNT:</span>
-                <span>₵${formatPrice(
-                  salesOrder.reduce((total, item) => total + (item.price * item.quantity), 0)
-                )}</span>
-              </div>
+              <div class="subtotal-row"><span>Subtotal:</span><span>₵${formatPrice(
+                salesOrder.reduce(
+                  (total, item) => total + item.price * item.quantity,
+                  0
+                )
+              )}</span></div>
+              <div class="subtotal-row"><span>Tax (0%):</span><span>₵0.00</span></div>
+              <div class="subtotal-row"><span>Shipping:</span><span>₵0.00</span></div>
+              <div class="total-row"><span>TOTAL AMOUNT:</span><span>₵${formatPrice(
+                salesOrder.reduce(
+                  (total, item) => total + item.price * item.quantity,
+                  0
+                )
+              )}</span></div>
             </div>
-            
             <div class="footer">
               <div class="thank-you">Thank you for your business!</div>
               <p>This is a computer-generated invoice and does not require a signature.</p>
@@ -600,7 +372,6 @@ const AgentOrderModal = ({
       }
 
       const printWindow = window.open("", "_blank", "width=800,height=600");
-
       if (!printWindow) {
         message.error("Please allow pop-ups to download the invoice");
         return;
@@ -608,7 +379,6 @@ const AgentOrderModal = ({
 
       printWindow.document.write(invoiceHTML);
       printWindow.document.close();
-
       printWindow.onload = function () {
         setTimeout(() => {
           printWindow.focus();
@@ -619,8 +389,8 @@ const AgentOrderModal = ({
       message.success(
         "Invoice opened in new window. Please use your browser's print function to save as PDF."
       );
-    } catch (error) {
-      console.error("Error generating invoice:", error);
+    } catch (err) {
+      console.error("Error generating invoice:", err);
       message.error("Failed to generate invoice. Please try again.");
     } finally {
       setIsDownloading(false);
@@ -650,21 +420,23 @@ const AgentOrderModal = ({
     const address = deliveryAddress?.[0] || {};
 
     fulfilmentForm.setFieldsValue({
-      customerId: firstItem.customerId || "",
-      customerName: firstItem.fullName || address.recipientName || "",
+      // customerId = n1UId from currentCustomerDetails
+      customerId: n1UId || "",
+      // Auto-filled from GetOrderDeliveryAddress endpoint
+      customerName: address.recipientName || firstItem.fullName || "",
       contactNumber:
-        firstItem.contactNumber || address.recipientContactNumber || "",
-      deliveryAddress: firstItem.address || address.address || "",
+        address.recipientContactNumber || firstItem.contactNumber || "",
+      deliveryAddress: address.address || firstItem.address || "",
       paymentMode: firstItem.paymentMode || "Cash on Delivery",
       paymentService: "MTN",
       paymentAccountNumber: firstItem.paymentAccountNumber || "",
       customerAccountType: "Agent",
-      geolocation: "345",
+      geolocation: address.geoLocation || "345",
       bCode: "855",
     });
 
     setFulfilmentOpen(true);
-  }, [safeOrders, deliveryAddress, fulfilmentForm]);
+  }, [safeOrders, deliveryAddress, fulfilmentForm, n1UId]);
 
   const handleSendToFulfilment = async (values) => {
     try {
@@ -678,7 +450,7 @@ const AgentOrderModal = ({
             productId: item.productId,
             price: Number(item.price),
             quantity: Number(item.quantity),
-            customerId: values.customerId,
+            customerId: values.customerId, // n1UId
             customerName: values.customerName,
             contactNumber: values.contactNumber,
             deliveryAddress: values.deliveryAddress,
@@ -695,13 +467,13 @@ const AgentOrderModal = ({
       message.success(
         `Successfully sent ${safeOrders.length} item(s) to fulfilment`
       );
+
+      // Mark as sent → disables the button(s)
+      setOrderSent(true);
       setFulfilmentOpen(false);
-      onClose(); // Close the main order modal as well
     } catch (err) {
       console.error("Fulfilment error:", err);
-      message.error(
-        err?.message || "Failed to send order to fulfilment"
-      );
+      message.error(err?.message || "Failed to send order to fulfilment");
     } finally {
       setSendingToFulfilment(false);
     }
@@ -727,8 +499,7 @@ const AgentOrderModal = ({
               style={{
                 width: "32px",
                 height: "32px",
-                background:
-                  "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
+                background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
                 borderRadius: "6px",
                 display: "flex",
                 alignItems: "center",
@@ -750,20 +521,21 @@ const AgentOrderModal = ({
                 Order Details
               </div>
               <div
-                style={{
-                  fontSize: "11px",
-                  color: "#6b7280",
-                  fontWeight: 400,
-                }}
+                style={{ fontSize: "11px", color: "#6b7280", fontWeight: 400 }}
               >
                 #{orderCode}
               </div>
             </div>
             <Tag
-              color="success"
-              style={{ margin: 0, fontSize: "10px", padding: "1px 6px", borderRadius: "4px" }}
+              color={orderSent ? "purple" : "success"}
+              style={{
+                margin: 0,
+                fontSize: "10px",
+                padding: "1px 6px",
+                borderRadius: "4px",
+              }}
             >
-              Active
+              {orderSent ? "Fulfilled" : "Active"}
             </Tag>
           </div>
         }
@@ -790,8 +562,7 @@ const AgentOrderModal = ({
                 flexDirection: "column",
                 gap: "10px",
                 padding: "12px",
-                background:
-                  "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
+                background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
                 borderRadius: "6px",
                 border: "1px solid #e5e7eb",
               }}
@@ -897,21 +668,27 @@ const AgentOrderModal = ({
 
                 <Button
                   type="primary"
-                  icon={<SendOutlined />}
+                  icon={
+                    orderSent ? <CheckCircleOutlined /> : <SendOutlined />
+                  }
                   onClick={openFulfilmentModal}
+                  disabled={orderSent}
                   style={{
                     flex: 1,
-                    background:
-                      "linear-gradient(135deg, #722ed1 0%, #531dab 100%)",
+                    background: orderSent
+                      ? "#d1d5db"
+                      : "linear-gradient(135deg, #722ed1 0%, #531dab 100%)",
                     border: "none",
-                    boxShadow: "0 3px 10px rgba(114, 46, 209, 0.3)",
+                    boxShadow: orderSent
+                      ? "none"
+                      : "0 3px 10px rgba(114, 46, 209, 0.3)",
                     height: "40px",
                     fontSize: "13px",
                     fontWeight: 600,
                     borderRadius: "6px",
                   }}
                 >
-                  Send to Fulfilment
+                  {orderSent ? "Sent to Fulfilment" : "Send to Fulfilment"}
                 </Button>
               </div>
             </div>
@@ -941,7 +718,9 @@ const AgentOrderModal = ({
                 margin: "0 auto 12px",
               }}
             >
-              <ShoppingOutlined style={{ color: "#ef4444", fontSize: "24px" }} />
+              <ShoppingOutlined
+                style={{ color: "#ef4444", fontSize: "24px" }}
+              />
             </div>
             <Title
               level={5}
@@ -962,7 +741,11 @@ const AgentOrderModal = ({
                 <div>
                   <Text
                     type="secondary"
-                    style={{ display: "block", marginBottom: "6px", fontSize: "13px" }}
+                    style={{
+                      display: "block",
+                      marginBottom: "6px",
+                      fontSize: "13px",
+                    }}
                   >
                     No order details found
                   </Text>
@@ -1014,7 +797,9 @@ const AgentOrderModal = ({
                     margin: "0 auto 6px",
                   }}
                 >
-                  <CalendarOutlined style={{ color: "white", fontSize: "14px" }} />
+                  <CalendarOutlined
+                    style={{ color: "white", fontSize: "14px" }}
+                  />
                 </div>
                 <div
                   style={{
@@ -1060,7 +845,9 @@ const AgentOrderModal = ({
                     margin: "0 auto 6px",
                   }}
                 >
-                  <ShoppingCartOutlined style={{ color: "white", fontSize: "14px" }} />
+                  <ShoppingCartOutlined
+                    style={{ color: "white", fontSize: "14px" }}
+                  />
                 </div>
                 <div
                   style={{
@@ -1072,7 +859,13 @@ const AgentOrderModal = ({
                 >
                   Total Items
                 </div>
-                <div style={{ fontSize: "16px", fontWeight: 700, color: "#065f46" }}>
+                <div
+                  style={{
+                    fontSize: "16px",
+                    fontWeight: 700,
+                    color: "#065f46",
+                  }}
+                >
                   {totalItems}
                 </div>
               </Card>
@@ -1100,7 +893,9 @@ const AgentOrderModal = ({
                     margin: "0 auto 6px",
                   }}
                 >
-                  <DollarOutlined style={{ color: "white", fontSize: "14px" }} />
+                  <DollarOutlined
+                    style={{ color: "white", fontSize: "14px" }}
+                  />
                 </div>
                 <div
                   style={{
@@ -1112,7 +907,13 @@ const AgentOrderModal = ({
                 >
                   Amount
                 </div>
-                <div style={{ fontSize: "14px", fontWeight: 700, color: "#9a3412" }}>
+                <div
+                  style={{
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    color: "#9a3412",
+                  }}
+                >
                   ₵{formatPrice(totalAmount)}
                 </div>
               </Card>
@@ -1129,7 +930,13 @@ const AgentOrderModal = ({
               }}
               bodyStyle={{ padding: "10px" }}
               title={
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
                   <div
                     style={{
                       width: "26px",
@@ -1141,7 +948,9 @@ const AgentOrderModal = ({
                       justifyContent: "center",
                     }}
                   >
-                    <EnvironmentOutlined style={{ color: "white", fontSize: "13px" }} />
+                    <EnvironmentOutlined
+                      style={{ color: "white", fontSize: "13px" }}
+                    />
                   </div>
                   <span
                     style={{
@@ -1160,7 +969,13 @@ const AgentOrderModal = ({
                 borderBottom: "1px solid #f3f4f6",
               }}
             >
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                }}
+              >
                 <div
                   style={{
                     display: "flex",
@@ -1171,7 +986,9 @@ const AgentOrderModal = ({
                     borderRadius: "6px",
                   }}
                 >
-                  <UserOutlined style={{ color: "#6366f1", fontSize: "13px" }} />
+                  <UserOutlined
+                    style={{ color: "#6366f1", fontSize: "13px" }}
+                  />
                   <div style={{ flex: 1 }}>
                     <div
                       style={{
@@ -1207,7 +1024,9 @@ const AgentOrderModal = ({
                     borderRadius: "6px",
                   }}
                 >
-                  <PhoneOutlined style={{ color: "#10b981", fontSize: "13px" }} />
+                  <PhoneOutlined
+                    style={{ color: "#10b981", fontSize: "13px" }}
+                  />
                   <div style={{ flex: 1 }}>
                     <div
                       style={{
@@ -1244,7 +1063,11 @@ const AgentOrderModal = ({
                   }}
                 >
                   <HomeOutlined
-                    style={{ color: "#3b82f6", fontSize: "13px", marginTop: "2px" }}
+                    style={{
+                      color: "#3b82f6",
+                      fontSize: "13px",
+                      marginTop: "2px",
+                    }}
                   />
                   <div style={{ flex: 1 }}>
                     <div
@@ -1283,7 +1106,13 @@ const AgentOrderModal = ({
                     justifyContent: "space-between",
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
                     <div
                       style={{
                         width: "26px",
@@ -1332,7 +1161,13 @@ const AgentOrderModal = ({
                 borderBottom: "1px solid #f3f4f6",
               }}
             >
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                }}
+              >
                 {safeOrders.map((item, index) => (
                   <div
                     key={index}
@@ -1370,7 +1205,8 @@ const AgentOrderModal = ({
                             fontWeight: 500,
                           }}
                         >
-                          Item #{index + 1} • ID: {item?.productId?.slice(0, 8)}...
+                          Item #{index + 1} • ID:{" "}
+                          {item?.productId?.slice(0, 8)}...
                         </div>
                       </div>
 
@@ -1462,7 +1298,10 @@ const AgentOrderModal = ({
                               color: "#9a3412",
                             }}
                           >
-                            ₵{formatPrice((item?.price || 0) * (item?.quantity || 0))}
+                            ₵
+                            {formatPrice(
+                              (item?.price || 0) * (item?.quantity || 0)
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1478,13 +1317,7 @@ const AgentOrderModal = ({
       {/* Fulfilment Modal */}
       <Modal
         title={
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <div
               style={{
                 width: "28px",
@@ -1541,10 +1374,11 @@ const AgentOrderModal = ({
             <Col span={12}>
               <Form.Item
                 name="customerId"
-                label="Customer ID"
+                label="Agent ID"
                 rules={[{ required: true, message: "Required" }]}
               >
-                <Input placeholder="Enter customer ID" />
+                {/* Auto-filled from currentCustomerDetails.n1UId */}
+                <Input placeholder="Customer ID" readOnly />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -1553,6 +1387,7 @@ const AgentOrderModal = ({
                 label="Customer Name"
                 rules={[{ required: true, message: "Required" }]}
               >
+                {/* Auto-filled from GetOrderDeliveryAddress.recipientName */}
                 <Input placeholder="Enter customer name" />
               </Form.Item>
             </Col>
@@ -1563,6 +1398,7 @@ const AgentOrderModal = ({
             label="Contact Number"
             rules={[{ required: true, message: "Required" }]}
           >
+            {/* Auto-filled from GetOrderDeliveryAddress.recipientContactNumber */}
             <Input placeholder="Enter contact number" />
           </Form.Item>
 
@@ -1571,10 +1407,7 @@ const AgentOrderModal = ({
             label="Delivery Address"
             rules={[{ required: true, message: "Required" }]}
           >
-            <Input.TextArea
-              rows={3}
-              placeholder="Enter delivery address"
-            />
+            <Input.TextArea rows={3} placeholder="Enter delivery address" />
           </Form.Item>
 
           <Row gutter={16}>
@@ -1585,6 +1418,7 @@ const AgentOrderModal = ({
                 rules={[{ required: true, message: "Required" }]}
               >
                 <Select placeholder="Select payment mode">
+                  <Option value="Cash on Delivery">Cash on Delivery</Option>
                   <Option value="Cash">Cash</Option>
                   <Option value="Mobile Money">Mobile Money</Option>
                   <Option value="Card">Card</Option>
@@ -1615,12 +1449,20 @@ const AgentOrderModal = ({
                 label="Account Type"
                 rules={[{ required: true, message: "Required" }]}
               >
-                <Select value="Agent">
+                <Select>
                   <Option value="Agent">Agent</Option>
                 </Select>
               </Form.Item>
             </Col>
           </Row>
+
+          {/* Hidden fields carried in the payload */}
+          <Form.Item name="geolocation" hidden>
+            <Input />
+          </Form.Item>
+          <Form.Item name="bCode" hidden>
+            <Input />
+          </Form.Item>
 
           <div
             style={{
@@ -1678,77 +1520,62 @@ const AgentOrderModal = ({
                 type="primary"
                 htmlType="submit"
                 loading={sendingToFulfilment}
-                icon={<SendOutlined />}
+                disabled={orderSent}
+                icon={
+                  orderSent ? <CheckCircleOutlined /> : <SendOutlined />
+                }
                 style={{
-                  background:
-                    "linear-gradient(135deg, #722ed1 0%, #531dab 100%)",
+                  background: orderSent
+                    ? "#d1d5db"
+                    : "linear-gradient(135deg, #722ed1 0%, #531dab 100%)",
                   border: "none",
-                  boxShadow: "0 3px 10px rgba(114, 46, 209, 0.3)",
+                  boxShadow: orderSent
+                    ? "none"
+                    : "0 3px 10px rgba(114, 46, 209, 0.3)",
                 }}
               >
-                Confirm & Send to Fulfilment
+                {orderSent
+                  ? "Sent to Fulfilment"
+                  : "Confirm & Send to Fulfilment"}
               </Button>
             </Space>
           </Form.Item>
         </Form>
       </Modal>
 
-      {/* Image Preview Modal */}
-      <Modal
-        open={false} // You can implement image preview if needed
-        onCancel={() => {}}
-        footer={null}
-        width="90%"
-        style={{ maxWidth: "600px" }}
-        centered
-      >
-        <div style={{ textAlign: "center", padding: "20px" }}>
-          {/* Image preview would go here */}
-        </div>
-      </Modal>
-
       <style jsx global>{`
         .order-modal-responsive .ant-modal-header {
           background: #fafafa;
         }
-
         .custom-scrollbar::-webkit-scrollbar {
           width: 4px;
         }
-
         .custom-scrollbar::-webkit-scrollbar-track {
           background: #f1f1f1;
           border-radius: 2px;
         }
-
         .custom-scrollbar::-webkit-scrollbar-thumb {
           background: #c1c1c1;
           border-radius: 2px;
         }
-
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
           background: #a8a8a8;
         }
-
         @media (max-width: 768px) {
           .order-modal-responsive .ant-modal {
             padding: 0 6px;
             max-width: 95vw !important;
           }
-
           .order-modal-responsive .ant-modal-body {
             padding: 10px;
           }
-
           .order-modal-responsive .ant-modal-footer {
             padding: 10px;
           }
-
           .order-modal-responsive .ant-modal-header {
             padding: 10px 12px;
           }
         }
-
         @media (max-width: 480px) {
           .summary-card .ant-card-body {
             padding: 8px 6px !important;

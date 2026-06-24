@@ -1,9 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Layout, Menu, Button, Typography } from 'antd';
 import {
   DashboardOutlined,
   ShoppingOutlined,
-  AppstoreAddOutlined,
+  
   MenuFoldOutlined,
   MenuUnfoldOutlined,
 } from '@ant-design/icons';
@@ -30,7 +30,7 @@ const AgentHome = ({ children }) => {
 
   const selectedKey = useMemo(() => {
     const path = location.pathname;
-    if (path.includes('/order-placement')) return '3';
+
     if (path.includes('/orders')) return '2';
     return '1';
   }, [location.pathname]);
@@ -48,12 +48,7 @@ const AgentHome = ({ children }) => {
       label: 'Orders',
       onClick: () => navigate('/agent/orders'),
     },
-    {
-      key: '3',
-      icon: <AppstoreAddOutlined style={{ fontSize: 18 }} />,
-      label: 'Order Placement',
-      onClick: () => navigate('/agent/order-placement'),
-    },
+   
   ].map((item) => ({ ...item, className: 'agent-menu-item' }));
 
   return (

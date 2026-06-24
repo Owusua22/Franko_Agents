@@ -17,7 +17,6 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import calendar from "dayjs/plugin/calendar";
 import isBetween from "dayjs/plugin/isBetween";
 
-
 import AgentOrderModal from "./AgentOrderModal";
 
 dayjs.extend(relativeTime);
@@ -109,72 +108,17 @@ const getPaymentConfig = (mode) => {
    ═══════════════════════════════════════════════ */
 const getStatusConfig = (status) => {
   const map = {
-    Pending: {
-      bg: "#fffbeb",
-      color: "#92400e",
-      border: "#fde68a",
-      dot: "#f59e0b",
-    },
-    Processing: {
-      bg: "#eff6ff",
-      color: "#1e40af",
-      border: "#bfdbfe",
-      dot: "#3b82f6",
-    },
-    "Order Placement": {
-      bg: "#eff6ff",
-      color: "#1e40af",
-      border: "#bfdbfe",
-      dot: "#3b82f6",
-    },
-    "Wrong Number": {
-      bg: "#faf5ff",
-      color: "#6b21a8",
-      border: "#e9d5ff",
-      dot: "#a855f7",
-    },
-    Delivery: {
-      bg: "#f0fdf4",
-      color: "#166534",
-      border: "#bbf7d0",
-      dot: "#22c55e",
-    },
-    Completed: {
-      bg: "#f0fdf4",
-      color: "#166534",
-      border: "#bbf7d0",
-      dot: "#22c55e",
-    },
-    Testing: {
-      bg: "#fefce8",
-      color: "#854d0e",
-      border: "#fef08a",
-      dot: "#eab308",
-    },
-    Cancelled: {
-      bg: "#fef2f2",
-      color: "#991b1b",
-      border: "#fecaca",
-      dot: "#ef4444",
-    },
-    Unreachable: {
-      bg: "#f9fafb",
-      color: "#374151",
-      border: "#e5e7eb",
-      dot: "#9ca3af",
-    },
-    "Not Answered": {
-      bg: "#fff7ed",
-      color: "#9a3412",
-      border: "#fed7aa",
-      dot: "#f97316",
-    },
-    "Multiple order": {
-      bg: "#eef2ff",
-      color: "#3730a3",
-      border: "#c7d2fe",
-      dot: "#6366f1",
-    },
+    Pending: { bg: "#fffbeb", color: "#92400e", border: "#fde68a", dot: "#f59e0b" },
+    Processing: { bg: "#eff6ff", color: "#1e40af", border: "#bfdbfe", dot: "#3b82f6" },
+    "Order Placement": { bg: "#eff6ff", color: "#1e40af", border: "#bfdbfe", dot: "#3b82f6" },
+    "Wrong Number": { bg: "#faf5ff", color: "#6b21a8", border: "#e9d5ff", dot: "#a855f7" },
+    Delivery: { bg: "#f0fdf4", color: "#166534", border: "#bbf7d0", dot: "#22c55e" },
+    Completed: { bg: "#f0fdf4", color: "#166534", border: "#bbf7d0", dot: "#22c55e" },
+    Testing: { bg: "#fefce8", color: "#854d0e", border: "#fef08a", dot: "#eab308" },
+    Cancelled: { bg: "#fef2f2", color: "#991b1b", border: "#fecaca", dot: "#ef4444" },
+    Unreachable: { bg: "#f9fafb", color: "#374151", border: "#e5e7eb", dot: "#9ca3af" },
+    "Not Answered": { bg: "#fff7ed", color: "#9a3412", border: "#fed7aa", dot: "#f97316" },
+    "Multiple order": { bg: "#eef2ff", color: "#3730a3", border: "#c7d2fe", dot: "#6366f1" },
   };
   return (
     map[status] || {
@@ -211,37 +155,25 @@ const QUICK_PERIODS = [
     key: "today",
     label: "Today",
     icon: "☀️",
-    getRange: () => [
-      dayjs().startOf("day"),
-      dayjs().add(1, "day").endOf("day"),
-    ],
+    getRange: () => [dayjs().startOf("day"), dayjs().add(1, "day").endOf("day")],
   },
   {
     key: "yesterday",
     label: "Yesterday",
     icon: "🌙",
-    getRange: () => [
-      dayjs().subtract(1, "day").startOf("day"),
-      dayjs().endOf("day"),
-    ],
+    getRange: () => [dayjs().subtract(1, "day").startOf("day"), dayjs().endOf("day")],
   },
   {
     key: "this_week",
     label: "This Week",
     icon: "📆",
-    getRange: () => [
-      dayjs().startOf("week"),
-      dayjs().add(1, "day").endOf("day"),
-    ],
+    getRange: () => [dayjs().startOf("week"), dayjs().add(1, "day").endOf("day")],
   },
   {
     key: "this_month",
     label: "This Month",
     icon: "🗓️",
-    getRange: () => [
-      dayjs().startOf("month"),
-      dayjs().add(1, "day").endOf("day"),
-    ],
+    getRange: () => [dayjs().startOf("month"), dayjs().add(1, "day").endOf("day")],
   },
   {
     key: "last_month",
@@ -265,20 +197,14 @@ const QUICK_PERIODS = [
     key: "this_year",
     label: "This Year",
     icon: "🎯",
-    getRange: () => [
-      dayjs().startOf("year"),
-      dayjs().add(1, "day").endOf("day"),
-    ],
+    getRange: () => [dayjs().startOf("year"), dayjs().add(1, "day").endOf("day")],
   },
   {
     key: "all_time",
     label: "All Time",
     icon: "♾️",
     slow: true,
-    getRange: () => [
-      ALL_TIME_START.clone(),
-      dayjs().add(1, "day").endOf("day"),
-    ],
+    getRange: () => [ALL_TIME_START.clone(), dayjs().add(1, "day").endOf("day")],
   },
 ];
 
@@ -297,7 +223,7 @@ const DATE_PICKER_PRESETS = QUICK_PERIODS.filter(
 ).map((p) => ({ label: p.label, value: p.getRange() }));
 
 /* ═══════════════════════════════════════════════
-   SUB-COMPONENTS (Defined outside main component)
+   SUB-COMPONENTS
    ═══════════════════════════════════════════════ */
 
 const StatCard = memo(({ value, label, emoji, color }) => (
@@ -330,9 +256,7 @@ const QuickPeriodBar = memo(({ activePeriod, onPeriodChange }) => (
         >
           <span className="oh-quick-icon">{p.icon}</span>
           {p.label}
-          {p.slow && (
-            <span className="oh-quick-hint">slow</span>
-          )}
+          {p.slow && <span className="oh-quick-hint">slow</span>}
         </button>
       ))}
       {activePeriod === "custom" && (
@@ -345,37 +269,37 @@ const QuickPeriodBar = memo(({ activePeriod, onPeriodChange }) => (
   </div>
 ));
 
-const MobileOrderCard = memo(({ order, onViewOrder }) => {
+const MobileOrderCard = memo(({ order, onViewOrder, isViewed }) => {
   const sCfg = getStatusConfig(order.orderCycle);
   const pCfg = getPaymentConfig(order.paymentMode);
 
   return (
-    <div
-      className="oh-mobile-card"
-      onClick={() => onViewOrder(order.orderId)}
-    >
+    <div className="oh-mobile-card" onClick={() => onViewOrder(order.orderId)}>
       <div className="oh-mc-row-top">
         <span className="oh-mc-id">#{order.orderId}</span>
-        <span
-          className="oh-badge-pill"
-          style={{
-            background: sCfg.bg,
-            color: sCfg.color,
-            borderColor: sCfg.border,
-            fontSize: 10,
-            padding: "2px 8px",
-          }}
-        >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {isViewed && (
+            <span className="oh-tick oh-tick-sm" title="Viewed">
+              &#10003;
+            </span>
+          )}
           <span
-            className="oh-badge-dot"
+            className="oh-badge-pill"
             style={{
-              background: sCfg.dot,
-              width: 6,
-              height: 6,
+              background: sCfg.bg,
+              color: sCfg.color,
+              borderColor: sCfg.border,
+              fontSize: 10,
+              padding: "2px 8px",
             }}
-          />
-          {order.orderCycle}
-        </span>
+          >
+            <span
+              className="oh-badge-dot"
+              style={{ background: sCfg.dot, width: 6, height: 6 }}
+            />
+            {order.orderCycle}
+          </span>
+        </div>
       </div>
 
       <div className="oh-mc-row-mid">
@@ -396,7 +320,7 @@ const MobileOrderCard = memo(({ order, onViewOrder }) => {
 
       <div className="oh-mc-row-bottom">
         <span className="oh-mc-view-link">
-          View Details &rarr;
+          {isViewed ? "Viewed ✓ · Open again" : "View Details"} &rarr;
         </span>
       </div>
     </div>
@@ -418,33 +342,35 @@ const NoCustomerState = memo(({ onSignInClick }) => (
   </div>
 ));
 
-const EmptyState = memo(({ searchTerm, statusFilter, rangeLabel, activePeriod, onClearFilters, onShowAll }) => (
-  <div className="oh-empty-state">
-    <div className="oh-empty-circle">
-      <span className="oh-empty-emoji">&#128230;</span>
+const EmptyState = memo(
+  ({ searchTerm, statusFilter, rangeLabel, activePeriod, onClearFilters, onShowAll }) => (
+    <div className="oh-empty-state">
+      <div className="oh-empty-circle">
+        <span className="oh-empty-emoji">&#128230;</span>
+      </div>
+      <div className="oh-empty-title">
+        {searchTerm || statusFilter !== "all"
+          ? "No Matching Orders"
+          : "No Orders in This Period"}
+      </div>
+      <div className="oh-empty-desc">
+        {searchTerm || statusFilter !== "all"
+          ? "Try adjusting your search or filter criteria to find what you're looking for."
+          : `No orders found for ${rangeLabel.toLowerCase()}. Try a wider date range.`}
+      </div>
+      {(searchTerm || statusFilter !== "all") && (
+        <button className="oh-btn-secondary" onClick={onClearFilters}>
+          Clear Filters
+        </button>
+      )}
+      {!searchTerm && statusFilter === "all" && activePeriod !== "all_time" && (
+        <button className="oh-btn-primary" onClick={onShowAll}>
+          Show All Time
+        </button>
+      )}
     </div>
-    <div className="oh-empty-title">
-      {searchTerm || statusFilter !== "all"
-        ? "No Matching Orders"
-        : "No Orders in This Period"}
-    </div>
-    <div className="oh-empty-desc">
-      {searchTerm || statusFilter !== "all"
-        ? "Try adjusting your search or filter criteria to find what you're looking for."
-        : `No orders found for ${rangeLabel.toLowerCase()}. Try a wider date range.`}
-    </div>
-    {(searchTerm || statusFilter !== "all") && (
-      <button className="oh-btn-secondary" onClick={onClearFilters}>
-        Clear Filters
-      </button>
-    )}
-    {!searchTerm && statusFilter === "all" && activePeriod !== "all_time" && (
-      <button className="oh-btn-primary" onClick={onShowAll}>
-        Show All Time
-      </button>
-    )}
-  </div>
-));
+  )
+);
 
 const LoadingState = memo(({ rangeLabel }) => (
   <div className="oh-empty-state">
@@ -476,128 +402,122 @@ const ErrorState = memo(({ error, onRetry }) => (
   </div>
 ));
 
-const FiltersDrawerContent = memo(({ 
-  open, 
-  onClose, 
-  activePeriod, 
-  onPeriodChange, 
-  displayDateRange, 
-  onDateChange, 
-  searchTerm, 
-  onSearchChange, 
-  statusFilter, 
-  onStatusChange, 
-  onExportPDF, 
-  onRefresh,
-  canExport 
-}) => (
-  <Drawer
-    title={
-      <span style={{ fontWeight: 800 }}>
-        Filters &amp; Actions
-      </span>
-    }
-    placement="bottom"
-    height="auto"
-    open={open}
-    onClose={onClose}
-    styles={{ body: { padding: "0 16px 24px" } }}
-  >
-    <div className="oh-drawer-body">
-      <div className="oh-drawer-field">
-        <label className="oh-drawer-label">
-          ⚡ Quick Period
-        </label>
-        <div
-          className="oh-quick-scroll"
-          style={{ overflowX: "auto", paddingBottom: 4 }}
-        >
-          {QUICK_PERIODS.map((p) => (
-            <button
-              key={p.key}
-              className={`oh-quick-chip ${
-                activePeriod === p.key ? "is-active" : ""
-              } ${p.slow ? "is-all" : ""}`}
-              onClick={() => onPeriodChange(p.key)}
-            >
-              <span className="oh-quick-icon">{p.icon}</span>
-              {p.label}
-            </button>
-          ))}
+const FiltersDrawerContent = memo(
+  ({
+    open,
+    onClose,
+    activePeriod,
+    onPeriodChange,
+    displayDateRange,
+    onDateChange,
+    searchTerm,
+    onSearchChange,
+    statusFilter,
+    onStatusChange,
+    onExportPDF,
+    onRefresh,
+    canExport,
+  }) => (
+    <Drawer
+      title={<span style={{ fontWeight: 800 }}>Filters &amp; Actions</span>}
+      placement="bottom"
+      height="auto"
+      open={open}
+      onClose={onClose}
+      styles={{ body: { padding: "0 16px 24px" } }}
+    >
+      <div className="oh-drawer-body">
+        <div className="oh-drawer-field">
+          <label className="oh-drawer-label">⚡ Quick Period</label>
+          <div
+            className="oh-quick-scroll"
+            style={{ overflowX: "auto", paddingBottom: 4 }}
+          >
+            {QUICK_PERIODS.map((p) => (
+              <button
+                key={p.key}
+                className={`oh-quick-chip ${
+                  activePeriod === p.key ? "is-active" : ""
+                } ${p.slow ? "is-all" : ""}`}
+                onClick={() => onPeriodChange(p.key)}
+              >
+                <span className="oh-quick-icon">{p.icon}</span>
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="oh-drawer-field">
+          <label className="oh-drawer-label">📅 Custom Date Range</label>
+          <DatePicker.RangePicker
+            value={displayDateRange}
+            onChange={onDateChange}
+            format="MMM D, YYYY"
+            size="large"
+            presets={DATE_PICKER_PRESETS}
+            style={{ width: "100%" }}
+          />
+        </div>
+        <div className="oh-drawer-field">
+          <label className="oh-drawer-label">🔍 Search</label>
+          <Input
+            placeholder="Order ID or customer name..."
+            value={searchTerm}
+            onChange={(e) => onSearchChange(e.target.value)}
+            size="large"
+            allowClear
+          />
+        </div>
+        <div className="oh-drawer-field">
+          <label className="oh-drawer-label">🏷️ Status</label>
+          <Select
+            value={statusFilter}
+            onChange={onStatusChange}
+            size="large"
+            style={{ width: "100%" }}
+          >
+            {STATUS_OPTIONS.map((s) => (
+              <Select.Option key={s} value={s}>
+                {s === "all" ? "All Statuses" : s}
+              </Select.Option>
+            ))}
+          </Select>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button
+            size="large"
+            disabled={!canExport}
+            onClick={() => {
+              onExportPDF();
+              onClose();
+            }}
+            style={{ flex: 1 }}
+          >
+            Export PDF
+          </Button>
+          <Button
+            size="large"
+            onClick={() => {
+              onRefresh();
+              onClose();
+            }}
+            style={{ flex: 1 }}
+          >
+            Refresh
+          </Button>
         </div>
       </div>
-      <div className="oh-drawer-field">
-        <label className="oh-drawer-label">
-          📅 Custom Date Range
-        </label>
-        <DatePicker.RangePicker
-          value={displayDateRange}
-          onChange={onDateChange}
-          format="MMM D, YYYY"
-          size="large"
-          presets={DATE_PICKER_PRESETS}
-          style={{ width: "100%" }}
-        />
-      </div>
-      <div className="oh-drawer-field">
-        <label className="oh-drawer-label">🔍 Search</label>
-        <Input
-          placeholder="Order ID or customer name..."
-          value={searchTerm}
-          onChange={(e) => onSearchChange(e.target.value)}
-          size="large"
-          allowClear
-        />
-      </div>
-      <div className="oh-drawer-field">
-        <label className="oh-drawer-label">🏷️ Status</label>
-        <Select
-          value={statusFilter}
-          onChange={onStatusChange}
-          size="large"
-          style={{ width: "100%" }}
-        >
-          {STATUS_OPTIONS.map((s) => (
-            <Select.Option key={s} value={s}>
-              {s === "all" ? "All Statuses" : s}
-            </Select.Option>
-          ))}
-        </Select>
-      </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <Button
-          size="large"
-          disabled={!canExport}
-          onClick={() => {
-            onExportPDF();
-            onClose();
-          }}
-          style={{ flex: 1 }}
-        >
-          Export PDF
-        </Button>
-        <Button
-          size="large"
-          onClick={() => {
-            onRefresh();
-            onClose();
-          }}
-          style={{ flex: 1 }}
-        >
-          Refresh
-        </Button>
-      </div>
-    </div>
-  </Drawer>
-));
+    </Drawer>
+  )
+);
 
 /* ═══════════════════════════════════════════════
    MAIN COMPONENT
    ═══════════════════════════════════════════════ */
 const AgentOrders = () => {
   const dispatch = useDispatch();
-  const navigate = useNavigate(); // Added for navigation to auth page
-  
+  const navigate = useNavigate();
+
   const ordersData = useSelector(
     (state) => state.orders || { orders: [], loading: false, error: null }
   );
@@ -628,6 +548,29 @@ const AgentOrders = () => {
 
   const customerId = customerObject?.customerAccountNumber;
   const hasValidCustomer = !!(customerObject && customerId);
+
+  // ── VIEWED ORDERS (tick tracking) ──────────────────────────────
+  const [viewedOrders, setViewedOrders] = useState(() => {
+    try {
+      const stored = localStorage.getItem(`viewedOrders_${customerId}`);
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  // Persist viewed orders whenever they change
+  useEffect(() => {
+    if (!customerId) return;
+    try {
+      localStorage.setItem(
+        `viewedOrders_${customerId}`,
+        JSON.stringify([...viewedOrders])
+      );
+    } catch {
+      /* ignore quota errors */
+    }
+  }, [viewedOrders, customerId]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -667,21 +610,27 @@ const AgentOrders = () => {
     setDateRange(period.getRange());
   };
 
-  const handleViewOrder = (orderId) => {
+  // ── View order + mark as viewed (adds the tick) ─────────────────
+  const handleViewOrder = useCallback((orderId) => {
     setSelectedOrderId(orderId);
     setIsOrderModalVisible(true);
-  };
+    setViewedOrders((prev) => {
+      if (prev.has(orderId)) return prev;
+      const next = new Set(prev);
+      next.add(orderId);
+      return next;
+    });
+  }, []);
 
   const handleOrderModalClose = () => {
     setIsOrderModalVisible(false);
     setSelectedOrderId(null);
   };
 
-  // Navigate to auth page instead of opening modal
   const handleSignInClick = () => {
     navigate("/");
   };
-  
+
   const handleRefresh = () => fetchOrders(dateRange);
 
   const transformedOrders = useMemo(() => {
@@ -696,9 +645,7 @@ const AgentOrders = () => {
           dateSecondary: fd.secondary,
           dateTime: fd.time,
           isRecent: fd.isRecent,
-          dayKey: orderDay.isValid()
-            ? orderDay.format("YYYY-MM-DD")
-            : "unknown",
+          dayKey: orderDay.isValid() ? orderDay.format("YYYY-MM-DD") : "unknown",
           dayHeader: friendlyDayHeader(orderDay),
           customerName: order?.fullName || "N/A",
           contactNumber: order?.contactNumber || "N/A",
@@ -741,17 +688,11 @@ const AgentOrders = () => {
       ["Delivery", "Completed"].includes(o.orderCycle)
     ).length;
     const inProgress = orders.filter((o) =>
-      [
-        "Processing",
-        "Pending",
-        "Testing",
-        "Wrong Number",
-        "Order Placement",
-      ].includes(o.orderCycle)
+      ["Processing", "Pending", "Testing", "Wrong Number", "Order Placement"].includes(
+        o.orderCycle
+      )
     ).length;
-    const cancelled = orders.filter(
-      (o) => o.orderCycle === "Cancelled"
-    ).length;
+    const cancelled = orders.filter((o) => o.orderCycle === "Cancelled").length;
     return { total, completed, inProgress, cancelled };
   }, [orders]);
 
@@ -795,11 +736,13 @@ const AgentOrders = () => {
         <span><strong>Total Orders:</strong> ${transformedOrders.length}</span>
       </div>
       <table>
-        <thead><tr><th>Order ID</th><th>Date</th><th>Payment</th><th>Status</th></tr></thead>
+        <thead><tr><th>Order ID</th><th>Date</th><th>Payment</th><th>Status</th><th>Viewed</th></tr></thead>
         <tbody>${transformedOrders
           .map(
             (o) =>
-              `<tr><td>#${o.orderId}</td><td>${o.dateSecondary} ${o.dateTime}</td><td>${o.paymentMode}</td><td>${o.orderCycle}</td></tr>`
+              `<tr><td>#${o.orderId}</td><td>${o.dateSecondary} ${o.dateTime}</td><td>${o.paymentMode}</td><td>${o.orderCycle}</td><td>${
+                viewedOrders.has(o.orderId) ? "✓" : "—"
+              }</td></tr>`
           )
           .join("")}</tbody>
       </table>
@@ -812,105 +755,124 @@ const AgentOrders = () => {
     printWindow.onload = () => printWindow.print();
   };
 
-  const columns = useMemo(() => [
-    {
-      title: "Order",
-      dataIndex: "orderId",
-      key: "orderId",
-      width: 150,
-      render: (text) => <span className="oh-mono-id">#{text}</span>,
-    },
-    {
-      title: "Date",
-      dataIndex: "datePrimary",
-      key: "datePrimary",
-      width: 220,
-      render: (text, record) => (
-        <div className="oh-date-cell">
-          <div className="oh-date-primary-row">
-            <span
-              className={`oh-date-primary ${
-                record.isRecent ? "is-recent" : ""
-              }`}
-            >
-              {text}
+  // ── Columns (now include the "Viewed" tick column) ──────────────
+  const columns = useMemo(
+    () => [
+      {
+        title: "Order",
+        dataIndex: "orderId",
+        key: "orderId",
+        width: 150,
+        render: (text) => <span className="oh-mono-id">#{text}</span>,
+      },
+      {
+        title: "Date",
+        dataIndex: "datePrimary",
+        key: "datePrimary",
+        width: 220,
+        render: (text, record) => (
+          <div className="oh-date-cell">
+            <div className="oh-date-primary-row">
+              <span
+                className={`oh-date-primary ${
+                  record.isRecent ? "is-recent" : ""
+                }`}
+              >
+                {text}
+              </span>
+              {record.isRecent && <span className="oh-date-new-dot" />}
+            </div>
+            <span className="oh-date-secondary">
+              {record.dateSecondary} · {record.dateTime}
             </span>
-            {record.isRecent && <span className="oh-date-new-dot" />}
           </div>
-          <span className="oh-date-secondary">
-            {record.dateSecondary} · {record.dateTime}
-          </span>
-        </div>
-      ),
-      sorter: (a, b) => a._timestamp - b._timestamp,
-      defaultSortOrder: "descend",
-    },
-    {
-      title: "Payment",
-      dataIndex: "paymentMode",
-      key: "paymentMode",
-      width: 180,
-      render: (mode) => {
-        const cfg = getPaymentConfig(mode);
-        return (
-          <span
-            className="oh-badge-pill"
-            style={{
-              background: cfg.bg,
-              color: cfg.color,
-              borderColor: cfg.border,
-            }}
-          >
-            <span
-              className="oh-badge-dot"
-              style={{ background: cfg.dot }}
-            />
-            {cfg.label}
-          </span>
-        );
+        ),
+        sorter: (a, b) => a._timestamp - b._timestamp,
+        defaultSortOrder: "descend",
       },
-    },
-    {
-      title: "Status",
-      dataIndex: "orderCycle",
-      key: "orderCycle",
-      width: 170,
-      render: (status) => {
-        const cfg = getStatusConfig(status);
-        return (
-          <span
-            className="oh-badge-pill"
-            style={{
-              background: cfg.bg,
-              color: cfg.color,
-              borderColor: cfg.border,
-            }}
-          >
+      {
+        title: "Payment",
+        dataIndex: "paymentMode",
+        key: "paymentMode",
+        width: 180,
+        render: (mode) => {
+          const cfg = getPaymentConfig(mode);
+          return (
             <span
-              className="oh-badge-dot"
-              style={{ background: cfg.dot }}
-            />
-            {status}
-          </span>
-        );
+              className="oh-badge-pill"
+              style={{
+                background: cfg.bg,
+                color: cfg.color,
+                borderColor: cfg.border,
+              }}
+            >
+              <span className="oh-badge-dot" style={{ background: cfg.dot }} />
+              {cfg.label}
+            </span>
+          );
+        },
       },
-    },
-    {
-      title: "",
-      key: "action",
-      width: 56,
-      render: (_, record) => (
-        <Tooltip title="View Details">
-          <button
-            className="oh-view-icon-btn"
-            onClick={() => handleViewOrder(record.orderId)}
-          >
-            <span className="oh-eye-char">&#9673;</span>
-          </button>
-        </Tooltip>
-      ),
-    },
-  ], []);
+      {
+        title: "Status",
+        dataIndex: "orderCycle",
+        key: "orderCycle",
+        width: 170,
+        render: (status) => {
+          const cfg = getStatusConfig(status);
+          return (
+            <span
+              className="oh-badge-pill"
+              style={{
+                background: cfg.bg,
+                color: cfg.color,
+                borderColor: cfg.border,
+              }}
+            >
+              <span className="oh-badge-dot" style={{ background: cfg.dot }} />
+              {status}
+            </span>
+          );
+        },
+      },
+      {
+        title: "Viewed",
+        key: "viewed",
+        width: 90,
+        align: "center",
+        filters: [
+          { text: "Viewed", value: true },
+          { text: "Not viewed", value: false },
+        ],
+        onFilter: (value, record) => viewedOrders.has(record.orderId) === value,
+        render: (_, record) =>
+          viewedOrders.has(record.orderId) ? (
+            <Tooltip title="You have viewed this order">
+              <span className="oh-tick">&#10003;</span>
+            </Tooltip>
+          ) : (
+            <Tooltip title="Not viewed yet">
+              <span className="oh-tick-empty">—</span>
+            </Tooltip>
+          ),
+      },
+      {
+        title: "",
+        key: "action",
+        width: 56,
+        render: (_, record) => (
+          <Tooltip title="View Details">
+            <button
+              className="oh-view-icon-btn"
+              onClick={() => handleViewOrder(record.orderId)}
+            >
+              <span className="oh-eye-char">&#9673;</span>
+            </button>
+          </Tooltip>
+        ),
+      },
+    ],
+    [viewedOrders, handleViewOrder]
+  );
 
   const clearFilters = useCallback(() => {
     setSearchTerm("");
@@ -931,9 +893,7 @@ const AgentOrders = () => {
               <div className="oh-header-bar" />
               <div>
                 <h1 className="oh-page-title">Order History</h1>
-                <p className="oh-page-subtitle">
-                  Track and manage your orders
-                </p>
+                <p className="oh-page-subtitle">Track and manage your orders</p>
               </div>
             </div>
             <div className="oh-main-card">
@@ -979,45 +939,23 @@ const AgentOrders = () => {
             </button>
           </div>
 
-          <QuickPeriodBar 
-            activePeriod={activePeriod} 
-            onPeriodChange={handleQuickPeriod} 
+          <QuickPeriodBar
+            activePeriod={activePeriod}
+            onPeriodChange={handleQuickPeriod}
           />
 
           {!loading && !error && orders.length > 0 && (
             <div className="oh-stats-grid">
-              <StatCard
-                value={stats.total}
-                label="Total"
-                emoji="&#128230;"
-                color="#2563eb"
-              />
-              <StatCard
-                value={stats.completed}
-                label="Completed"
-                emoji="&#10003;"
-                color="#16a34a"
-              />
-              <StatCard
-                value={stats.inProgress}
-                label="In Progress"
-                emoji="&#9203;"
-                color="#ea580c"
-              />
-              <StatCard
-                value={stats.cancelled}
-                label="Cancelled"
-                emoji="&#10005;"
-                color="#dc2626"
-              />
+              <StatCard value={stats.total} label="Total" emoji="&#128230;" color="#2563eb" />
+              <StatCard value={stats.completed} label="Completed" emoji="&#10003;" color="#16a34a" />
+              <StatCard value={stats.inProgress} label="In Progress" emoji="&#9203;" color="#ea580c" />
+              <StatCard value={stats.cancelled} label="Cancelled" emoji="&#10005;" color="#dc2626" />
             </div>
           )}
 
           <div className="oh-filters-bar">
             <div className="oh-filter-group">
-              <label className="oh-filter-label">
-                📅 Custom Date Range
-              </label>
+              <label className="oh-filter-label">📅 Custom Date Range</label>
               <DatePicker.RangePicker
                 value={displayDateRange}
                 onChange={handleDateChange}
@@ -1068,23 +1006,16 @@ const AgentOrders = () => {
               {searchTerm && (
                 <span className="oh-chip">
                   Search: &ldquo;{searchTerm}&rdquo;
-                  <button onClick={() => setSearchTerm("")}>
-                    &times;
-                  </button>
+                  <button onClick={() => setSearchTerm("")}>&times;</button>
                 </span>
               )}
               {statusFilter !== "all" && (
                 <span className="oh-chip">
                   {statusFilter}
-                  <button onClick={() => setStatusFilter("all")}>
-                    &times;
-                  </button>
+                  <button onClick={() => setStatusFilter("all")}>&times;</button>
                 </span>
               )}
-              <button
-                className="oh-clear-all"
-                onClick={clearFilters}
-              >
+              <button className="oh-clear-all" onClick={clearFilters}>
                 Clear all
               </button>
             </div>
@@ -1102,6 +1033,9 @@ const AgentOrders = () => {
                     dataSource={transformedOrders}
                     columns={columns}
                     rowKey="key"
+                    rowClassName={(record) =>
+                      viewedOrders.has(record.orderId) ? "oh-row-viewed" : ""
+                    }
                     pagination={{
                       pageSize: 10,
                       showSizeChanger: true,
@@ -1109,7 +1043,7 @@ const AgentOrders = () => {
                         `${range[0]}\u2013${range[1]} of ${total}`,
                     }}
                     size="middle"
-                    scroll={{ x: 720 }}
+                    scroll={{ x: 800 }}
                   />
                 </div>
 
@@ -1133,6 +1067,7 @@ const AgentOrders = () => {
                           key={order.key}
                           order={order}
                           onViewOrder={handleViewOrder}
+                          isViewed={viewedOrders.has(order.orderId)}
                         />
                       ))}
                     </div>
@@ -1140,7 +1075,7 @@ const AgentOrders = () => {
                 </div>
               </>
             ) : (
-              <EmptyState 
+              <EmptyState
                 searchTerm={searchTerm}
                 statusFilter={statusFilter}
                 rangeLabel={rangeLabel}
@@ -1157,7 +1092,7 @@ const AgentOrders = () => {
           isModalVisible={isOrderModalVisible}
           onClose={handleOrderModalClose}
         />
-        <FiltersDrawerContent 
+        <FiltersDrawerContent
           open={filtersDrawerOpen}
           onClose={() => setFiltersDrawerOpen(false)}
           activePeriod={activePeriod}
@@ -1179,7 +1114,6 @@ const AgentOrders = () => {
 
 export default AgentOrders;
 
-// Styles remain the same as in the original code
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
@@ -1370,6 +1304,8 @@ const styles = `
   }
   .oh-desktop-table .ant-table-tbody > tr:last-child > td { border-bottom: none !important; }
   .oh-desktop-table .ant-table-tbody > tr:hover > td { background: #fafbfc !important; }
+  .oh-desktop-table .ant-table-tbody > tr.oh-row-viewed > td { background: #f0fdf4 !important; }
+  .oh-desktop-table .ant-table-tbody > tr.oh-row-viewed:hover > td { background: #e7fbef !important; }
   .oh-desktop-table .ant-pagination { padding: 18px 22px !important; font-family: var(--oh-font) !important; }
   .oh-desktop-table .ant-pagination-item-active { background: var(--oh-green) !important; border-color: var(--oh-green) !important; }
   .oh-desktop-table .ant-pagination-item-active a { color: #fff !important; }
@@ -1400,6 +1336,22 @@ const styles = `
     font-size: 11px; font-weight: 600; white-space: nowrap; letter-spacing: 0.01em;
   }
   .oh-badge-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+
+  /* ── VIEWED TICK ─────────────────────────────── */
+  .oh-tick {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--oh-green-lighter); color: var(--oh-green-mid);
+    border: 1px solid #bbf7d0; font-size: 13px; font-weight: 800;
+    line-height: 1; animation: oh-tick-pop 0.25s ease;
+  }
+  .oh-tick-sm { width: 20px; height: 20px; font-size: 11px; }
+  .oh-tick-empty { color: #d1d5db; font-weight: 700; }
+  @keyframes oh-tick-pop {
+    0% { transform: scale(0); opacity: 0; }
+    60% { transform: scale(1.2); }
+    100% { transform: scale(1); opacity: 1; }
+  }
 
   .oh-view-icon-btn {
     display: flex; align-items: center; justify-content: center;
