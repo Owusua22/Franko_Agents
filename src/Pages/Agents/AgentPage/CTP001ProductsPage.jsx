@@ -294,37 +294,48 @@ const CTP001ProductsPage = () => {
     [orderForm, mergedProductMap, websiteProducts]
   );
 
-  const handlePlaceOrder = useCallback(
-    async (values) => {
-      try {
-        await dispatch(
-          placeOrder({
-            cartId: values.cartId,
-            productId: values.productId,
-            price: values.price,
-            quantity: values.quantity,
-            customerId: values.customerId,
-            customerName: values.customerName,
-            contactNumber: values.contactNumber,
-            deliveryAddress: values.deliveryAddress,
-            geolocation: values.geolocation || "345",
-            paymentMode: values.paymentMode,
-            paymentService: values.paymentService,
-            paymentAccountNumber: values.paymentAccountNumber,
-            customerAccountType: values.customerAccountType,
-            bCode: values.bCode,
-          })
-        ).unwrap();
-        message.success("Order placed successfully!");
-        setOrderModalVisible(false);
-        setSelectedProduct(null);
-        orderForm.resetFields();
-      } catch (err) {
-        message.error(typeof err === "string" ? err : err?.message || "Failed to place order");
+const handlePlaceOrder = useCallback(
+  async (values) => {
+    try {
+      // 1. Dispatch and get the actual payload
+      const resultAction = await dispatch(
+        placeOrder({
+          cartId: values.cartId,
+          productId: values.productId,
+          price: values.price,
+          quantity: values.quantity,
+          customerId: values.customerId,
+          customerName: values.customerName,
+          contactNumber: values.contactNumber,
+          deliveryAddress: values.deliveryAddress,
+          geolocation: values.geolocation || "345",
+          paymentMode: values.paymentMode,
+          paymentService: values.paymentService,
+          paymentAccountNumber: values.paymentAccountNumber,
+          customerAccountType: values.customerAccountType,
+          bCode: values.bCode,
+        })
+      ).unwrap(); // Use unwrap to get the payload directly
+
+      // 2. Check the responseCode inside the successful payload
+      // Based on your JSON, '0' means business logic failure (e.g., product not merged)
+      if (resultAction?.responseCode === "0") {
+        message.error(resultAction.responseMessage || "One or more products have not been merged.");
+        return; // Exit early, don't close the modal
       }
-    },
-    [dispatch, orderForm]
-  );
+
+      // 3. If responseCode is successful (e.g., '1' or '200')
+      message.success("Order placed successfully!");
+      setOrderModalVisible(false);
+      setSelectedProduct(null);
+      orderForm.resetFields();
+    } catch (err) {
+      // Handles actual network errors or explicit rejections
+      message.error(typeof err === "string" ? err : err?.message || "Failed to place order");
+    }
+  },
+  [dispatch, orderForm]
+);
 
   const handleTableChange = useCallback(
     (pag) => {

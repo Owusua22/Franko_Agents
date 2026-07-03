@@ -473,7 +473,7 @@ const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
       setFulfilmentOpen(false);
     } catch (err) {
       console.error("Fulfilment error:", err);
-      message.error(err?.message || "Failed to send order to fulfilment");
+      message.error(err?.message || "Product not merged..contact content manager to merge product");
     } finally {
       setSendingToFulfilment(false);
     }

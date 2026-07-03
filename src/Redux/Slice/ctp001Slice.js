@@ -425,61 +425,26 @@ export const getMergedProducts = createAsyncThunk(
 // ── Place 1N1 Order ──
 export const placeOrder = createAsyncThunk(
   "ctp001/placeOrder",
-  async (
-    {
-      cartId = "",
-      productId,
-      price = 0,
-      quantity,
-      customerId,
-      customerName,
-      contactNumber,
-      deliveryAddress,
-      geolocation = "345",
-      paymentMode = "",
-      paymentService = "",
-      paymentAccountNumber = "",
-      customerAccountType = "",
-      bCode = DEFAULT_BCODE,
-    },
-    { rejectWithValue }
-  ) => {
+  async (payloadData, { rejectWithValue }) => {
     try {
-      if (!productId) throw new Error("Product ID is required.");
-      if (price === undefined || price === null || Number(price) < 0)
-        throw new Error("Price must be 0 or greater.");
-      if (!quantity || Number(quantity) <= 0)
-        throw new Error("Quantity must be greater than 0.");
-      if (!customerId) throw new Error("Customer ID is required.");
-      if (!customerName)
-        throw new Error("Customer name is required.");
-      if (!contactNumber)
-        throw new Error("Contact number is required.");
-      if (!deliveryAddress)
-        throw new Error("Delivery address is required.");
-      if (!paymentMode)
-        throw new Error("Payment mode is required.");
-      if (!paymentService)
-        throw new Error("Payment service is required.");
-      if (!customerAccountType)
-        throw new Error("Customer account type is required.");
+      // ... (keep your existing validation logic here) ...
 
       const payload = {
-        cartId: String(cartId || ""),
-        productId: String(productId),
-        price: Number(price),
-        quantity: Number(quantity),
-        customerId: String(customerId),
-        customerName: String(customerName),
-        contactNumber: String(contactNumber),
-        deliveryAddress: String(deliveryAddress),
-        geolocation: String(geolocation || "345"),
+        cartId: String(payloadData.cartId || ""),
+        productId: String(payloadData.productId),
+        price: Number(payloadData.price),
+        quantity: Number(payloadData.quantity),
+        customerId: String(payloadData.customerId),
+        customerName: String(payloadData.customerName),
+        contactNumber: String(payloadData.contactNumber),
+        deliveryAddress: String(payloadData.deliveryAddress),
+        geolocation: String(payloadData.geolocation || "345"),
         orderDate: getToday(),
-        paymentMode: String(paymentMode),
-        paymentService: String(paymentService),
-        paymentAccountNumber: String(paymentAccountNumber || ""),
-        customerAccountType: String(customerAccountType),
-        bCode: String(bCode || DEFAULT_BCODE),
+        paymentMode: String(payloadData.paymentMode),
+        paymentService: String(payloadData.paymentService),
+        paymentAccountNumber: String(payloadData.paymentAccountNumber || ""),
+        customerAccountType: String(payloadData.customerAccountType),
+        bCode: String(payloadData.bCode || DEFAULT_BCODE),
       };
 
       const res = await axiosInstance.post("/", [payload], {
@@ -487,7 +452,16 @@ export const placeOrder = createAsyncThunk(
         headers: { "Content-Type": "application/json" },
       });
 
-      return res.data;
+      const data = res.data;
+
+      // ✅ LOGIC: If responseCode is '0', treat it as an error
+      if (data && data.responseCode === "0") {
+        return rejectWithValue(
+          data.responseMessage || "One or more products have not been merged."
+        );
+      }
+
+      return data;
     } catch (error) {
       return rejectWithValue(
         toErrorPayload(error, "Failed to place order")
@@ -801,24 +775,27 @@ const ctp001Slice = createSlice({
         state.loading.placeOrder = true;
         state.error.placeOrder = null;
       })
-      .addCase(placeOrder.fulfilled, (state, action) => {
-        state.loading.placeOrder = false;
-        const orderResult = action.payload;
-        if (orderResult) {
-          if (Array.isArray(orderResult)) {
-            state.orders.push(...orderResult);
-            state.currentOrder = orderResult[0];
-          } else {
-            state.orders.push(orderResult);
-            state.currentOrder = orderResult;
-          }
-        }
-      })
-      .addCase(placeOrder.rejected, (state, action) => {
-        state.loading.placeOrder = false;
-        state.error.placeOrder =
-          action.payload || "Failed to place order";
-      });
+  // ... inside extraReducers ...
+
+.addCase(placeOrder.fulfilled, (state, action) => {
+  state.loading.placeOrder = false;
+  state.error.placeOrder = null; // Clear any previous errors
+  const orderResult = action.payload;
+  if (orderResult) {
+    if (Array.isArray(orderResult)) {
+      state.orders.push(...orderResult);
+      state.currentOrder = orderResult[0];
+    } else {
+      state.orders.push(orderResult);
+      state.currentOrder = orderResult;
+    }
+  }
+})
+.addCase(placeOrder.rejected, (state, action) => {
+  state.loading.placeOrder = false;
+  // This will now catch the "One or more products have not been merged" message
+  state.error.placeOrder = action.payload || "Failed to place order";
+});
   },
 });
 
