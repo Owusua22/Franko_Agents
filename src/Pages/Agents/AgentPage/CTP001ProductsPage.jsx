@@ -36,12 +36,12 @@ import {
   CheckCircleTwoTone,
   InfoCircleOutlined,
 } from "@ant-design/icons";
+
 import {
   getCTP001Products,
   mergeSingleCTP001WithCTP002,
   placeOrder,
   clearSimilarCandidates,
-  removeManualMerge,
   selectCTP001Products,
   selectCTP001Pagination,
   selectCTP001ProductsLoading,
@@ -58,11 +58,21 @@ import {
   selectMergedProducts,
   selectMergedProductsLoading,
 } from "../../../Redux/Slice/ctp001Slice";
-import { fetchAllProducts } from "../../../Redux/Slice/productSlice";
+
+import {
+  fetchAllProducts,
+  fetchCTP002ProductVariants,
+} from "../../../Redux/Slice/productSlice";
 
 const { Text, Title } = Typography;
 
 const BACKEND_BASE_URL = "https://cms.frankotrading.com";
+
+/* ════════════════════════════════════════════
+   HELPERS
+════════════════════════════════════════════ */
+
+const normalizeId = (value) => String(value ?? "").trim();
 
 const getImageUrl = (imagePath) => {
   if (!imagePath) return null;
@@ -72,28 +82,105 @@ const getImageUrl = (imagePath) => {
 };
 
 const getRowKey = (record, index) =>
-  record?.productID || record?.Productid || record?.productId || `row-${index}`;
+  normalizeId(
+    record?.productID ||
+      record?.Productid ||
+      record?.productId ||
+      record?.ProductId ||
+      record?.id
+  ) || `row-${index}`;
 
 const formatPrice = (price) =>
-  parseFloat(price || 0).toLocaleString("en-US", {
+  Number(price || 0).toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
 
 const getProductId = (product) =>
-  product?.productID || product?.Productid || product?.productId || product?.ProductId || product?.id || "";
+  normalizeId(
+    product?.productID ||
+      product?.Productid ||
+      product?.productId ||
+      product?.ProductId ||
+      product?.id ||
+      product?.Id ||
+      product?.ID
+  );
 
 const getProductName = (product) =>
-  product?.productName || product?.ProductName || "";
+  product?.productName ||
+  product?.ProductName ||
+  product?.name ||
+  product?.Name ||
+  "";
 
 const getProductPrice = (product) =>
-  Number(product?.sellingPrice1 || product?.price || 0);
+  Number(
+    product?.sellingPrice1 ??
+      product?.SellingPrice1 ??
+      product?.price ??
+      product?.Price ??
+      0
+  );
 
 const getProductBCode = (product) =>
   product?.bCode || product?.BCode || "855";
 
+const getMergedCTP001Id = (item) =>
+  normalizeId(
+    item?.ctP001ProductId || item?.CTP001ProductId || item?.ctp001ProductId
+  );
+
+const getMergedCTP002Id = (item) =>
+  normalizeId(
+    item?.ctP002ProductId || item?.CTP002ProductId || item?.ctp002ProductId
+  );
+
+const getVariantId = (variant) =>
+  normalizeId(
+    variant?.variantId ||
+      variant?.VariantId ||
+      variant?.variantID ||
+      variant?.VariantID ||
+      variant?.productVariantId ||
+      variant?.ProductVariantId ||
+      variant?.id ||
+      variant?.Id ||
+      variant?.ID
+  );
+
+const getVariantName = (variant) =>
+  variant?.variantName ||
+  variant?.VariantName ||
+  variant?.name ||
+  variant?.Name ||
+  variant?.productName ||
+  variant?.ProductName ||
+  [variant?.color || variant?.Color, variant?.size || variant?.Size]
+    .filter(Boolean)
+    .join(" / ") ||
+  `Variant ${getVariantId(variant)}`;
+
+const getVariantPrice = (variant) =>
+  Number(
+    variant?.sellingPrice1 ??
+      variant?.SellingPrice1 ??
+      variant?.price ??
+      variant?.Price ??
+      variant?.variantPrice ??
+      0
+  );
+
+const getVariantBCode = (variant) =>
+  variant?.bCode || variant?.BCode || "";
+
+/* ════════════════════════════════════════════
+   COMPONENT
+════════════════════════════════════════════ */
+
 const CTP001ProductsPage = () => {
   const dispatch = useDispatch();
+  const [orderForm] = Form.useForm();
 
   const products = useSelector(selectCTP001Products);
   const pagination = useSelector(selectCTP001Pagination);
@@ -112,6 +199,9 @@ const CTP001ProductsPage = () => {
 
   const websiteProducts = useSelector((state) => state.products?.products || []);
   const websiteLoading = useSelector((state) => state.products?.loading);
+  const ctp002ProductVariantsMap = useSelector(
+    (state) => state.products?.ctp002ProductVariants || {}
+  );
 
   const [searchText, setSearchText] = useState("");
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -123,7 +213,40 @@ const CTP001ProductsPage = () => {
   const [selectedWebsiteCandidate, setSelectedWebsiteCandidate] = useState(null);
   const [websiteSearchText, setWebsiteSearchText] = useState("");
   const [isMerging, setIsMerging] = useState(false);
-  const [orderForm] = Form.useForm();
+  const [variantFetchLoading, setVariantFetchLoading] = useState(false);
+  const [variantFetchError, setVariantFetchError] = useState(null);
+
+  const orderWebsiteProductId = Form.useWatch("ctp002ProductId", orderForm);
+
+  const getLinkedWebsiteId = useCallback(
+    (salesMateId) => {
+      const key = normalizeId(salesMateId);
+      return normalizeId(mergedProductMap?.[key] || mergedProductMap?.[salesMateId]);
+    },
+    [mergedProductMap]
+  );
+
+  const orderVariants = useMemo(() => {
+    const key = normalizeId(orderWebsiteProductId);
+    return Array.isArray(ctp002ProductVariantsMap?.[key])
+      ? ctp002ProductVariantsMap[key]
+      : [];
+  }, [ctp002ProductVariantsMap, orderWebsiteProductId]);
+
+  const variantOptions = useMemo(() => {
+    return orderVariants.map((variant) => {
+      const variantId = getVariantId(variant);
+      const variantName = getVariantName(variant);
+      const variantPrice = getVariantPrice(variant);
+
+      return {
+        value: variantId,
+        label: `${variantName}${
+          variantPrice > 0 ? ` — ₵${formatPrice(variantPrice)}` : ""
+        }`,
+      };
+    });
+  }, [orderVariants]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -132,23 +255,42 @@ const CTP001ProductsPage = () => {
   useEffect(() => {
     dispatch(getCTP001Products({ pageNumber: 1, recordPerPage: 3000 }));
     dispatch(getMergedProducts());
+  }, [dispatch]);
+
+  useEffect(() => {
     if (!websiteProducts.length && !websiteLoading) {
       dispatch(fetchAllProducts());
     }
-  }, [dispatch]);
+  }, [dispatch, websiteProducts.length, websiteLoading]);
 
-  const handleRefresh = useCallback(() => {
-    dispatch(
-      getCTP001Products({
-        pageNumber: pagination.pageNumber,
-        recordPerPage: pagination.recordPerPage,
-      })
-    )
-      .unwrap()
-      .then(() => message.success("Refreshed!"))
-      .catch((err) => message.error(typeof err === "string" ? err : "Failed to refresh"));
-    dispatch(getMergedProducts()).catch(() => {});
-  }, [dispatch, pagination.pageNumber, pagination.recordPerPage]);
+  const handleRefresh = useCallback(async () => {
+    try {
+      const tasks = [
+        dispatch(
+          getCTP001Products({
+            pageNumber: pagination.pageNumber,
+            recordPerPage: pagination.recordPerPage,
+          })
+        ).unwrap(),
+        dispatch(getMergedProducts()).unwrap(),
+      ];
+
+      if (!websiteProducts.length && !websiteLoading) {
+        tasks.push(dispatch(fetchAllProducts()).unwrap());
+      }
+
+      await Promise.all(tasks);
+      message.success("Refreshed!");
+    } catch (err) {
+      message.error(typeof err === "string" ? err : "Failed to refresh");
+    }
+  }, [
+    dispatch,
+    pagination.pageNumber,
+    pagination.recordPerPage,
+    websiteProducts.length,
+    websiteLoading,
+  ]);
 
   const handleViewMergedProducts = useCallback(() => {
     setMergedModalVisible(true);
@@ -157,6 +299,8 @@ const CTP001ProductsPage = () => {
 
   const handleOpenMergeModal = useCallback(
     (product) => {
+      dispatch(clearSpecificError("singleMerge"));
+
       const openModal = () => {
         setMergeTargetProduct(product);
         setSelectedWebsiteCandidate(null);
@@ -179,98 +323,178 @@ const CTP001ProductsPage = () => {
     [dispatch, websiteProducts.length, websiteLoading]
   );
 
-  // ═══════════════════════════════════════════════════════
-  // ✅ SIMPLIFIED: No similarity dialog, just merge directly
-  // ═══════════════════════════════════════════════════════
-  const handleConfirmMerge = async () => {
+  const handleConfirmMerge = useCallback(async () => {
     if (!mergeTargetProduct || !selectedWebsiteCandidate) {
       message.warning("Please select a Website Product to link with.");
       return;
     }
 
-    // Prevent double-clicks
-    if (isMerging || isSingleMerging) {
-      return;
-    }
+    if (isMerging || isSingleMerging) return;
 
     const targetName = getProductName(mergeTargetProduct);
     const candidateName = getProductName(selectedWebsiteCandidate);
-    const sim = getSimilarity(targetName, candidateName);
-
-    console.log("═══ MERGE START ═══");
-    console.log(`Target: "${targetName}" | Candidate: "${candidateName}"`);
-    console.log(`Similarity: ${Math.round(sim * 100)}%`);
+    const similarity = getSimilarity(targetName, candidateName);
 
     setIsMerging(true);
     const hideLoading = message.loading("Linking products...", 0);
 
     try {
-      const resultAction = await dispatch(
+      const result = await dispatch(
         mergeSingleCTP001WithCTP002({
           ctp001Product: mergeTargetProduct,
           ctp002Product: selectedWebsiteCandidate,
         })
+      ).unwrap();
+
+      hideLoading();
+
+      const similarityNote =
+        similarity < 0.5 ? ` (Similarity: ${Math.round(similarity * 100)}%)` : "";
+
+      message.success(
+        (result?.message || "Products linked successfully!") + similarityNote
       );
 
-      hideLoading();
-
-      console.log("Dispatch result:", resultAction.type, resultAction.payload);
-
-      if (mergeSingleCTP001WithCTP002.fulfilled.match(resultAction)) {
-        const similarityNote = sim < 0.5 ? ` (Similarity: ${Math.round(sim * 100)}%)` : "";
-        message.success(
-          (resultAction.payload?.message || "Products linked successfully!") + similarityNote
-        );
-        dispatch(getMergedProducts());
-        setMergeModalVisible(false);
-        setMergeTargetProduct(null);
-        setSelectedWebsiteCandidate(null);
-        dispatch(clearSimilarCandidates());
-      } else if (mergeSingleCTP001WithCTP002.rejected.match(resultAction)) {
-        const errorMsg =
-          resultAction.payload || resultAction.error?.message || "Failed to link products";
-        console.error("Merge rejected:", errorMsg);
-        message.error(typeof errorMsg === "string" ? errorMsg : "Failed to link products");
-      }
+      dispatch(getMergedProducts());
+      setMergeModalVisible(false);
+      setMergeTargetProduct(null);
+      setSelectedWebsiteCandidate(null);
+      setWebsiteSearchText("");
+      dispatch(clearSimilarCandidates());
     } catch (err) {
       hideLoading();
-      console.error("Merge error:", err);
-      message.error(typeof err === "string" ? err : err?.message || "Failed to link products");
+      message.error(
+        typeof err === "string" ? err : err?.message || "Failed to link products"
+      );
     } finally {
       setIsMerging(false);
     }
-  };
-
-  const handleUnmerge = useCallback(
-    (salesMateId) => {
-      dispatch(removeManualMerge(salesMateId));
-      message.success("Link removed.");
-      dispatch(getMergedProducts());
-    },
-    [dispatch]
-  );
+  }, [
+    dispatch,
+    mergeTargetProduct,
+    selectedWebsiteCandidate,
+    isMerging,
+    isSingleMerging,
+  ]);
 
   const handleViewDetails = useCallback((product) => {
     setSelectedProduct(product);
     setDetailModalVisible(true);
   }, []);
 
-  const handleOpenOrderModal = useCallback(
-    (product, isMergedProduct = false) => {
-      const salesMateId = getProductId(product) || product.ctP001ProductId;
-      const websiteProductId = mergedProductMap[salesMateId] || product.ctP002ProductId;
-      let orderProduct = product;
-      if (websiteProductId) {
-        const webProd = websiteProducts.find(
-          (p) => String(getProductId(p)) === String(websiteProductId)
-        );
-        if (webProd) orderProduct = webProd;
+  const handleVariantChange = useCallback(
+    (variantId) => {
+      const selectedVariant = orderVariants.find(
+        (v) => getVariantId(v) === normalizeId(variantId)
+      );
+
+      if (!selectedVariant) return;
+
+      const nextValues = {};
+      const variantPrice = getVariantPrice(selectedVariant);
+      const variantBCode = getVariantBCode(selectedVariant);
+
+      if (variantPrice > 0) nextValues.price = variantPrice;
+      if (variantBCode) nextValues.bCode = variantBCode;
+
+      if (Object.keys(nextValues).length) {
+        orderForm.setFieldsValue(nextValues);
       }
+    },
+    [orderVariants, orderForm]
+  );
+
+  const loadVariantsForWebsiteProduct = useCallback(
+    async (websiteProductId, fallbackProduct) => {
+      if (!websiteProductId) return;
+
+      setVariantFetchLoading(true);
+      setVariantFetchError(null);
+
+      try {
+        const result = await dispatch(
+          fetchCTP002ProductVariants(String(websiteProductId))
+        ).unwrap();
+
+        const variants = Array.isArray(result?.variants) ? result.variants : [];
+
+        if (!variants.length) {
+          setVariantFetchError("No variants found for this Website Product.");
+          return;
+        }
+
+        if (variants.length === 1) {
+          const onlyVariant = variants[0];
+          orderForm.setFieldsValue({
+            variantId: getVariantId(onlyVariant),
+            price:
+              getVariantPrice(onlyVariant) || getProductPrice(fallbackProduct),
+            bCode:
+              getVariantBCode(onlyVariant) || getProductBCode(fallbackProduct),
+          });
+        } else {
+          orderForm.setFieldsValue({ variantId: undefined });
+        }
+      } catch (err) {
+        setVariantFetchError(
+          typeof err === "string"
+            ? err
+            : err?.message ||
+                err?.responseMessage ||
+                "Failed to load product variants"
+        );
+      } finally {
+        setVariantFetchLoading(false);
+      }
+    },
+    [dispatch, orderForm]
+  );
+
+  const handleOpenOrderModal = useCallback(
+    async (product, isMergedProduct = false) => {
+      dispatch(clearSpecificError("placeOrder"));
+
+      const salesMateId = normalizeId(
+        getProductId(product) || getMergedCTP001Id(product)
+      );
+
+      const websiteProductId = normalizeId(
+        isMergedProduct
+          ? getMergedCTP002Id(product) || getLinkedWebsiteId(salesMateId)
+          : getLinkedWebsiteId(salesMateId) || getMergedCTP002Id(product)
+      );
+
+      if (!websiteProductId) {
+        message.warning("This product is not linked to a Website Product.");
+        return;
+      }
+
+      const matchedWebsiteProduct = websiteProducts.find(
+        (p) => getProductId(p) === websiteProductId
+      );
+
+      const orderProduct =
+        matchedWebsiteProduct ||
+        {
+          productId: websiteProductId,
+          Productid: websiteProductId,
+          productName:
+            product?.ctP002ProductName ||
+            product?.ctP001ProductName ||
+            getProductName(product),
+          price: getProductPrice(product),
+          bCode: getProductBCode(product),
+          productImage: product?.productImage || product?.image,
+        };
+
       setSelectedProduct(orderProduct);
+      setVariantFetchError(null);
+
+      orderForm.resetFields();
       orderForm.setFieldsValue({
         cartId: "",
-        productId: getProductId(orderProduct) || websiteProductId,
-        productName: getProductName(orderProduct) || product.ctP002ProductName,
+        ctp002ProductId: websiteProductId,
+        variantId: undefined,
         price: getProductPrice(orderProduct),
         bCode: getProductBCode(orderProduct),
         quantity: 1,
@@ -279,63 +503,78 @@ const CTP001ProductsPage = () => {
         contactNumber: "",
         deliveryAddress: "",
         geolocation: "345",
-        paymentMode: "Cash on delivery",
+        paymentMode: "Cash",
         paymentService: "MTN",
         paymentAccountNumber: "",
         customerAccountType: "Agent",
-        isMerged: !!websiteProductId || isMergedProduct,
-        ctp001ProductId: isMergedProduct ? product.ctP001ProductId : salesMateId,
-        ctp002ProductId: isMergedProduct ? product.ctP002ProductId : websiteProductId || "",
+        isMerged: true,
+        ctp001ProductId: salesMateId,
       });
+
       setDetailModalVisible(false);
       setMergedModalVisible(false);
       setOrderModalVisible(true);
+
+      await loadVariantsForWebsiteProduct(websiteProductId, orderProduct);
     },
-    [orderForm, mergedProductMap, websiteProducts]
+    [
+      dispatch,
+      orderForm,
+      getLinkedWebsiteId,
+      websiteProducts,
+      loadVariantsForWebsiteProduct,
+    ]
   );
 
-const handlePlaceOrder = useCallback(
-  async (values) => {
-    try {
-      // 1. Dispatch and get the actual payload
-      const resultAction = await dispatch(
-        placeOrder({
-          cartId: values.cartId,
-          productId: values.productId,
-          price: values.price,
-          quantity: values.quantity,
-          customerId: values.customerId,
-          customerName: values.customerName,
-          contactNumber: values.contactNumber,
-          deliveryAddress: values.deliveryAddress,
-          geolocation: values.geolocation || "345",
-          paymentMode: values.paymentMode,
-          paymentService: values.paymentService,
-          paymentAccountNumber: values.paymentAccountNumber,
-          customerAccountType: values.customerAccountType,
-          bCode: values.bCode,
-        })
-      ).unwrap(); // Use unwrap to get the payload directly
+  const handlePlaceOrder = useCallback(
+    async (values) => {
+      try {
+        const result = await dispatch(
+          placeOrder({
+            cartId: values.cartId,
+            variantId: values.variantId,
+            price: values.price,
+            quantity: values.quantity,
+            customerId: values.customerId,
+            customerName: values.customerName,
+            contactNumber: values.contactNumber,
+            deliveryAddress: values.deliveryAddress,
+            geolocation: values.geolocation || "345",
+            paymentMode: values.paymentMode,
+            paymentService: values.paymentService,
+            paymentAccountNumber: values.paymentAccountNumber,
+            customerAccountType: values.customerAccountType,
+            bCode: values.bCode,
+          })
+        ).unwrap();
 
-      // 2. Check the responseCode inside the successful payload
-      // Based on your JSON, '0' means business logic failure (e.g., product not merged)
-      if (resultAction?.responseCode === "0") {
-        message.error(resultAction.responseMessage || "One or more products have not been merged.");
-        return; // Exit early, don't close the modal
+        if (
+          result &&
+          typeof result === "object" &&
+          !Array.isArray(result) &&
+          String(result.responseCode ?? "") === "0"
+        ) {
+          message.error(
+            result.responseMessage || "One or more products have not been merged."
+          );
+          return;
+        }
+
+        message.success("Order placed successfully!");
+        setOrderModalVisible(false);
+        setSelectedProduct(null);
+        setVariantFetchError(null);
+        orderForm.resetFields();
+      } catch (err) {
+        message.error(
+          typeof err === "string"
+            ? err
+            : err?.message || "Failed to place order"
+        );
       }
-
-      // 3. If responseCode is successful (e.g., '1' or '200')
-      message.success("Order placed successfully!");
-      setOrderModalVisible(false);
-      setSelectedProduct(null);
-      orderForm.resetFields();
-    } catch (err) {
-      // Handles actual network errors or explicit rejections
-      message.error(typeof err === "string" ? err : err?.message || "Failed to place order");
-    }
-  },
-  [dispatch, orderForm]
-);
+    },
+    [dispatch, orderForm]
+  );
 
   const handleTableChange = useCallback(
     (pag) => {
@@ -356,13 +595,17 @@ const handlePlaceOrder = useCallback(
     setSelectedWebsiteCandidate(null);
     setWebsiteSearchText("");
     dispatch(clearSimilarCandidates());
+    dispatch(clearSpecificError("singleMerge"));
   }, [dispatch]);
 
   const closeOrderModal = useCallback(() => {
     setOrderModalVisible(false);
     setSelectedProduct(null);
+    setVariantFetchError(null);
+    setVariantFetchLoading(false);
     orderForm.resetFields();
-  }, [orderForm]);
+    dispatch(clearSpecificError("placeOrder"));
+  }, [dispatch, orderForm]);
 
   const closeDetailModal = useCallback(() => {
     setDetailModalVisible(false);
@@ -372,11 +615,18 @@ const handlePlaceOrder = useCallback(
   const filteredProducts = useMemo(() => {
     const q = searchText.trim().toLowerCase();
     if (!q) return products || [];
+
     return (products || []).filter((product) =>
       [
-        product?.productName, product?.ProductName, product?.productID,
-        product?.Productid, product?.productId, product?.description,
-        product?.brandName, product?.categoryName, product?.showRoomName,
+        product?.productName,
+        product?.ProductName,
+        product?.productID,
+        product?.Productid,
+        product?.productId,
+        product?.description,
+        product?.brandName,
+        product?.categoryName,
+        product?.showRoomName,
         product?.bCode,
       ].some((field) => String(field ?? "").toLowerCase().includes(q))
     );
@@ -384,24 +634,28 @@ const handlePlaceOrder = useCallback(
 
   const displayedCandidates = useMemo(() => {
     if (!websiteProducts.length || !mergeTargetProduct) return [];
+
     const targetName = getProductName(mergeTargetProduct);
+
     const mapped = websiteProducts.map((p) => ({
       product: p,
       productId: getProductId(p),
       productName: getProductName(p),
       similarity: getSimilarity(targetName, getProductName(p)),
     }));
+
     if (websiteSearchText) {
       const q = websiteSearchText.toLowerCase();
       return mapped
         .filter(
           (item) =>
             item.productName.toLowerCase().includes(q) ||
-            String(item.productId).includes(q)
+            String(item.productId).toLowerCase().includes(q)
         )
         .sort((a, b) => b.similarity - a.similarity)
         .slice(0, 200);
     }
+
     return mapped.sort((a, b) => b.similarity - a.similarity).slice(0, 200);
   }, [websiteProducts, websiteSearchText, mergeTargetProduct]);
 
@@ -420,10 +674,12 @@ const handlePlaceOrder = useCallback(
       {
         title: "Product Details",
         key: "details",
-        width: 250,
+        width: 260,
         render: (_, record) => {
           const id = getProductId(record);
-          const isMerged = !!mergedProductMap[id];
+          const websiteId = getLinkedWebsiteId(id);
+          const isMerged = !!websiteId;
+
           return (
             <div>
               <div style={{ fontWeight: 600, marginBottom: 2 }}>
@@ -435,14 +691,16 @@ const handlePlaceOrder = useCallback(
                   />
                 )}
               </div>
+
               <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>
                 ID: {id || "-"}
                 {isMerged && (
                   <Tag color="success" style={{ marginLeft: 6, fontSize: 10 }}>
-                    Linked → {mergedProductMap[id]}
+                    Linked → {websiteId}
                   </Tag>
                 )}
               </div>
+
               {record?.brandName && (
                 <Tag color="blue" style={{ fontSize: 11, marginRight: 4 }}>
                   {record.brandName}
@@ -462,8 +720,9 @@ const handlePlaceOrder = useCallback(
         key: "sellingPrice1",
         width: 130,
         render: (_, record) => {
-          const price = record?.sellingPrice1 || record?.price || 0;
-          const oldPrice = record?.oldPrice;
+          const price = getProductPrice(record);
+          const oldPrice = Number(record?.oldPrice || 0);
+
           return (
             <div>
               <div style={{ fontWeight: 600, color: "#ff4d4f", fontSize: 15 }}>
@@ -490,19 +749,14 @@ const handlePlaceOrder = useCallback(
         width: 130,
         render: (_, record) => {
           const id = getProductId(record);
-          const websiteId = mergedProductMap[id];
+          const websiteId = getLinkedWebsiteId(id);
+
           return websiteId ? (
-            <Tag
-              color="success"
-              icon={<LinkOutlined />}
-              style={{ cursor: "pointer" }}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleUnmerge(id);
-              }}
-            >
-              Linked
-            </Tag>
+            <Tooltip title={`Linked to Website Product ID: ${websiteId}`}>
+              <Tag color="success" icon={<LinkOutlined />}>
+                Linked
+              </Tag>
+            </Tooltip>
           ) : (
             <Tag color="default">Not Linked</Tag>
           );
@@ -515,7 +769,8 @@ const handlePlaceOrder = useCallback(
         fixed: "right",
         render: (_, record) => {
           const id = getProductId(record);
-          const isMerged = !!mergedProductMap[id];
+          const isMerged = !!getLinkedWebsiteId(id);
+
           return (
             <Space size="small">
               <Tooltip title="View Details">
@@ -528,6 +783,7 @@ const handlePlaceOrder = useCallback(
                   }}
                 />
               </Tooltip>
+
               <Tooltip title={isMerged ? "Re-link" : "Link to Website Product"}>
                 <Button
                   type="text"
@@ -539,11 +795,8 @@ const handlePlaceOrder = useCallback(
                   }}
                 />
               </Tooltip>
-              <Tooltip
-                title={
-                  !isMerged ? "Link first to enable ordering" : "Place Order"
-                }
-              >
+
+              <Tooltip title={isMerged ? "Place Order" : "Link first to enable ordering"}>
                 <Button
                   type="text"
                   icon={<ShoppingCartOutlined />}
@@ -560,23 +813,21 @@ const handlePlaceOrder = useCallback(
         },
       },
     ],
-    [
-      handleViewDetails,
-      handleOpenOrderModal,
-      handleOpenMergeModal,
-      mergedProductMap,
-      handleUnmerge,
-    ]
+    [getLinkedWebsiteId, handleViewDetails, handleOpenMergeModal, handleOpenOrderModal]
   );
 
   const detailContent = useMemo(() => {
     if (!selectedProduct) return null;
+
     const imageUrl = getImageUrl(
       selectedProduct?.productImage || selectedProduct?.image
     );
-    const price = selectedProduct?.sellingPrice1 || selectedProduct?.price || 0;
-    const id = getProductId(selectedProduct);
-    const websiteId = mergedProductMap[id];
+
+    const price = getProductPrice(selectedProduct);
+    const id =
+      getProductId(selectedProduct) || getMergedCTP001Id(selectedProduct);
+    const websiteId = getLinkedWebsiteId(id);
+
     return (
       <div>
         {imageUrl && (
@@ -593,9 +844,11 @@ const handlePlaceOrder = useCallback(
             />
           </div>
         )}
+
         <h2 style={{ fontSize: 22, fontWeight: 600, marginBottom: 16 }}>
           {getProductName(selectedProduct) || "Product"}
         </h2>
+
         <Row gutter={[16, 12]}>
           <Col span={12}>
             <strong>Sales Mate ID:</strong>{" "}
@@ -603,8 +856,9 @@ const handlePlaceOrder = useCallback(
           </Col>
           <Col span={12}>
             <strong>B-Code:</strong>{" "}
-            <Tag color="purple">{selectedProduct?.bCode || "Not Set"}</Tag>
+            <Tag color="purple">{getProductBCode(selectedProduct) || "Not Set"}</Tag>
           </Col>
+
           {websiteId && (
             <Col span={24}>
               <Alert
@@ -616,11 +870,13 @@ const handlePlaceOrder = useCallback(
             </Col>
           )}
         </Row>
+
         <div style={{ marginTop: 16 }}>
           <div style={{ fontSize: 28, fontWeight: 700, color: "#ff4d4f" }}>
             ₵{formatPrice(price)}
           </div>
         </div>
+
         {selectedProduct?.description && (
           <div style={{ marginTop: 16 }}>
             <strong>Description:</strong>
@@ -631,7 +887,7 @@ const handlePlaceOrder = useCallback(
         )}
       </div>
     );
-  }, [selectedProduct, mergedProductMap]);
+  }, [selectedProduct, getLinkedWebsiteId]);
 
   return (
     <div style={{ minHeight: "100vh", padding: 24, backgroundColor: "#fff" }}>
@@ -649,7 +905,7 @@ const handlePlaceOrder = useCallback(
 
       {fetchError && (
         <Alert
-          message={fetchError}
+          message={typeof fetchError === "string" ? fetchError : "Failed to fetch products"}
           type="error"
           showIcon
           closable
@@ -657,9 +913,10 @@ const handlePlaceOrder = useCallback(
           onClose={() => dispatch(clearSpecificError("ctp001Products"))}
         />
       )}
+
       {mergeError && (
         <Alert
-          message={mergeError}
+          message={typeof mergeError === "string" ? mergeError : "Merge error"}
           type="warning"
           showIcon
           closable
@@ -678,6 +935,7 @@ const handlePlaceOrder = useCallback(
             />
           </Card>
         </Col>
+
         <Col xs={12} sm={6}>
           <Card size="small" hoverable>
             <Statistic
@@ -687,6 +945,7 @@ const handlePlaceOrder = useCallback(
             />
           </Card>
         </Col>
+
         <Col xs={12} sm={6}>
           <Card size="small" hoverable>
             <Statistic
@@ -710,6 +969,7 @@ const handlePlaceOrder = useCallback(
               allowClear
             />
           </Col>
+
           <Col>
             <Space>
               <Button
@@ -719,6 +979,7 @@ const handlePlaceOrder = useCallback(
               >
                 Refresh
               </Button>
+
               <Button
                 icon={<LinkOutlined />}
                 onClick={handleViewMergedProducts}
@@ -769,7 +1030,7 @@ const handlePlaceOrder = useCallback(
             <Button
               type="primary"
               icon={<ShoppingCartOutlined />}
-              disabled={!mergedProductMap[getProductId(selectedProduct)]}
+              disabled={!getLinkedWebsiteId(getProductId(selectedProduct))}
               onClick={() => handleOpenOrderModal(selectedProduct)}
               style={{ backgroundColor: "#52c41a", borderColor: "#52c41a" }}
             >
@@ -791,7 +1052,7 @@ const handlePlaceOrder = useCallback(
         open={mergedModalVisible}
         onCancel={() => setMergedModalVisible(false)}
         footer={null}
-        width={900}
+        width={980}
         centered
         destroyOnClose
         title={
@@ -804,13 +1065,11 @@ const handlePlaceOrder = useCallback(
         <Table
           dataSource={mergedProducts}
           loading={mergedLoading}
-          rowKey={(r, i) => `${r.ctP001ProductId}-${r.ctP002ProductId}-${i}`}
+          rowKey={(r, i) =>
+            `${getMergedCTP001Id(r)}-${getMergedCTP002Id(r)}-${i}`
+          }
           locale={{
-            emptyText: mergedLoading ? (
-              <Spin />
-            ) : (
-              <Empty description="No linked products" />
-            ),
+            emptyText: mergedLoading ? <Spin /> : <Empty description="No linked products" />,
           }}
           columns={[
             {
@@ -820,8 +1079,9 @@ const handlePlaceOrder = useCallback(
             },
             {
               title: "Sales Mate ID",
-              dataIndex: "ctP001ProductId",
-              render: (t) => <Tag color="blue">{t}</Tag>,
+              render: (_, record) => (
+                <Tag color="blue">{getMergedCTP001Id(record) || "-"}</Tag>
+              ),
             },
             {
               title: "Website Product",
@@ -830,8 +1090,23 @@ const handlePlaceOrder = useCallback(
             },
             {
               title: "Website ID",
-              dataIndex: "ctP002ProductId",
-              render: (t) => <Tag color="purple">{t}</Tag>,
+              render: (_, record) => (
+                <Tag color="purple">{getMergedCTP002Id(record) || "-"}</Tag>
+              ),
+            },
+            {
+              title: "Action",
+              key: "action",
+              width: 120,
+              render: (_, record) => (
+                <Button
+                  type="link"
+                  icon={<ShoppingCartOutlined />}
+                  onClick={() => handleOpenOrderModal(record, true)}
+                >
+                  Order
+                </Button>
+              ),
             },
           ]}
           size="small"
@@ -839,7 +1114,7 @@ const handlePlaceOrder = useCallback(
         />
       </Modal>
 
-      {/* ═══ MERGE MODAL ═══ */}
+      {/* Merge Modal */}
       <Modal
         open={mergeModalVisible}
         onCancel={closeMergeModal}
@@ -858,10 +1133,16 @@ const handlePlaceOrder = useCallback(
         {singleMergeError && (
           <Alert
             message="Link Error"
-            description={singleMergeError}
+            description={
+              typeof singleMergeError === "string"
+                ? singleMergeError
+                : "Failed to link product"
+            }
             type="error"
             showIcon
+            closable
             style={{ marginBottom: 16 }}
+            onClose={() => dispatch(clearSpecificError("singleMerge"))}
           />
         )}
 
@@ -874,7 +1155,7 @@ const handlePlaceOrder = useCallback(
               <Col>
                 <Avatar
                   src={getImageUrl(
-                    mergeTargetProduct.productImage || mergeTargetProduct.image
+                    mergeTargetProduct?.productImage || mergeTargetProduct?.image
                   )}
                   size={60}
                   shape="square"
@@ -923,9 +1204,7 @@ const handlePlaceOrder = useCallback(
           locale={{
             emptyText: (
               <Empty
-                description={
-                  websiteProducts.length ? "No matches." : "Loading..."
-                }
+                description={websiteProducts.length ? "No matches." : "Loading..."}
               />
             ),
           }}
@@ -934,6 +1213,7 @@ const handlePlaceOrder = useCallback(
             const isSelected =
               selectedWebsiteCandidate &&
               getProductId(selectedWebsiteCandidate) === item.productId;
+
             return (
               <List.Item
                 onClick={() => setSelectedWebsiteCandidate(item.product)}
@@ -957,24 +1237,27 @@ const handlePlaceOrder = useCallback(
                       shape="square"
                     />
                   </Col>
+
                   <Col flex="auto">
-                    <div style={{ fontWeight: 600 }}>{item.productName}</div>
+                    <div style={{ fontWeight: 600 }}>{item.productName || "-"}</div>
                     <Text type="secondary" style={{ fontSize: 12 }}>
-                      ID: {item.productId}
+                      ID: {item.productId || "-"}
                     </Text>
                     <br />
                     <Text type="secondary">
                       ₵{formatPrice(getProductPrice(item.product))}
                     </Text>
                   </Col>
+
                   <Col style={{ width: 140 }}>
                     <Progress
-                      percent={Math.round(item.similarity * 100)}
+                      percent={Math.round((item.similarity || 0) * 100)}
                       size="small"
                       status={item.similarity === 1 ? "success" : "active"}
                       format={(p) => `${p}%`}
                     />
                   </Col>
+
                   <Col>
                     {isSelected && (
                       <CheckCircleTwoTone
@@ -1012,7 +1295,6 @@ const handlePlaceOrder = useCallback(
           />
         )}
 
-        {/* ✅ Action buttons inside modal body */}
         <div
           style={{
             marginTop: 20,
@@ -1042,7 +1324,7 @@ const handlePlaceOrder = useCallback(
         </div>
       </Modal>
 
-      {/* ═══ ORDER MODAL ═══ */}
+      {/* Order Modal */}
       <Modal
         open={orderModalVisible}
         onCancel={closeOrderModal}
@@ -1059,12 +1341,24 @@ const handlePlaceOrder = useCallback(
       >
         {orderError && (
           <Alert
-            message={orderError}
+            message={typeof orderError === "string" ? orderError : "Failed to place order"}
             type="error"
+            showIcon
+            closable
+            style={{ marginBottom: 16 }}
+            onClose={() => dispatch(clearSpecificError("placeOrder"))}
+          />
+        )}
+
+        {variantFetchError && (
+          <Alert
+            message={variantFetchError}
+            type="warning"
             showIcon
             style={{ marginBottom: 16 }}
           />
         )}
+
         <Form form={orderForm} layout="vertical" onFinish={handlePlaceOrder}>
           <Form.Item shouldUpdate noStyle>
             {({ getFieldValue }) =>
@@ -1095,8 +1389,9 @@ const handlePlaceOrder = useCallback(
                 <Input placeholder="Optional" />
               </Form.Item>
             </Col>
+
             <Col span={12}>
-              <Form.Item name="productId" label="Product ID">
+              <Form.Item name="ctp002ProductId" label="Website Product ID">
                 <Input disabled />
               </Form.Item>
             </Col>
@@ -1110,27 +1405,63 @@ const handlePlaceOrder = useCallback(
             />
           </Form.Item>
 
+          <Form.Item
+            name="variantId"
+            label="Variant"
+            rules={[{ required: true, message: "Please select a variant" }]}
+            extra="Select a variant from the linked Website Product"
+          >
+            <Select
+              showSearch
+              allowClear
+              placeholder={
+                variantFetchLoading ? "Loading variants..." : "Select variant"
+              }
+              loading={variantFetchLoading}
+              options={variantOptions}
+              optionFilterProp="label"
+              onChange={handleVariantChange}
+              notFoundContent={
+                variantFetchLoading ? <Spin size="small" /> : "No variants found"
+              }
+            />
+          </Form.Item>
+
+          {!variantFetchLoading &&
+            !!orderWebsiteProductId &&
+            !orderVariants.length &&
+            !variantFetchError && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="No variants available"
+                description="This Website Product has no variants, so an order cannot be placed yet."
+              />
+            )}
+
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
                 name="price"
                 label="Price"
-                rules={[{ required: true }]}
+                rules={[{ required: true, message: "Price is required" }]}
               >
                 <InputNumber min={0} style={{ width: "100%" }} size="large" />
               </Form.Item>
             </Col>
+
             <Col span={12}>
               <Form.Item
                 name="quantity"
                 label="Quantity"
                 rules={[
-                  { required: true },
+                  { required: true, message: "Quantity is required" },
                   {
                     validator: (_, v) =>
-                      v > 0
+                      Number(v) > 0
                         ? Promise.resolve()
-                        : Promise.reject("Must be > 0"),
+                        : Promise.reject(new Error("Must be greater than 0")),
                   },
                 ]}
               >
@@ -1149,16 +1480,17 @@ const handlePlaceOrder = useCallback(
               <Form.Item
                 name="customerId"
                 label="Customer ID"
-                rules={[{ required: true }]}
+                rules={[{ required: true, message: "Customer ID is required" }]}
               >
                 <Input />
               </Form.Item>
             </Col>
+
             <Col span={12}>
               <Form.Item
                 name="customerName"
                 label="Customer Name"
-                rules={[{ required: true }]}
+                rules={[{ required: true, message: "Customer name is required" }]}
               >
                 <Input />
               </Form.Item>
@@ -1168,17 +1500,19 @@ const handlePlaceOrder = useCallback(
           <Form.Item
             name="contactNumber"
             label="Contact Number"
-            rules={[{ required: true }]}
+            rules={[{ required: true, message: "Contact number is required" }]}
           >
             <Input />
           </Form.Item>
+
           <Form.Item
             name="deliveryAddress"
             label="Delivery Address"
-            rules={[{ required: true }]}
+            rules={[{ required: true, message: "Delivery address is required" }]}
           >
             <Input.TextArea rows={3} />
           </Form.Item>
+
           <Form.Item name="geolocation" label="Geolocation">
             <Input
               disabled
@@ -1191,7 +1525,7 @@ const handlePlaceOrder = useCallback(
               <Form.Item
                 name="paymentMode"
                 label="Payment Mode"
-                rules={[{ required: true }]}
+                rules={[{ required: true, message: "Payment mode is required" }]}
               >
                 <Select
                   options={[
@@ -1203,11 +1537,12 @@ const handlePlaceOrder = useCallback(
                 />
               </Form.Item>
             </Col>
+
             <Col span={12}>
               <Form.Item
                 name="paymentService"
                 label="Payment Service"
-                rules={[{ required: true }]}
+                rules={[{ required: true, message: "Payment service is required" }]}
               >
                 <Input placeholder="MTN, Vodafone, etc." />
               </Form.Item>
@@ -1220,11 +1555,12 @@ const handlePlaceOrder = useCallback(
                 <Input />
               </Form.Item>
             </Col>
+
             <Col span={12}>
               <Form.Item
                 name="customerAccountType"
                 label="Account Type"
-                rules={[{ required: true }]}
+                rules={[{ required: true, message: "Account type is required" }]}
               >
                 <Select options={[{ label: "Agent", value: "Agent" }]} />
               </Form.Item>
@@ -1234,13 +1570,12 @@ const handlePlaceOrder = useCallback(
           <Form.Item name="bCode" label="B-Code">
             <Input disabled style={{ fontFamily: "monospace" }} />
           </Form.Item>
+
           <Form.Item name="isMerged" hidden>
             <Input />
           </Form.Item>
+
           <Form.Item name="ctp001ProductId" hidden>
-            <Input />
-          </Form.Item>
-          <Form.Item name="ctp002ProductId" hidden>
             <Input />
           </Form.Item>
 
@@ -1251,6 +1586,7 @@ const handlePlaceOrder = useCallback(
                 type="primary"
                 htmlType="submit"
                 loading={isOrdering}
+                disabled={variantFetchLoading || !orderVariants.length}
                 icon={<ShoppingCartOutlined />}
                 style={{ backgroundColor: "#52c41a", borderColor: "#52c41a" }}
                 size="large"

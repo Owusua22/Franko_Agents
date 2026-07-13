@@ -1,23 +1,19 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
   Modal,
   Spin,
   Typography,
-  Card,
   Button,
   Space,
-  Empty,
   Tooltip,
   message,
   Form,
   Input,
   Tag,
   Select,
-  Row,
-  Col,
   Divider,
-  Badge,
+  Alert,
 } from "antd";
 import {
   UserOutlined,
@@ -25,48 +21,322 @@ import {
   HomeOutlined,
   DownloadOutlined,
   ShoppingOutlined,
-  CalendarOutlined,
-  DollarOutlined,
-  ShoppingCartOutlined,
-  EnvironmentOutlined,
-  PrinterOutlined,
   SendOutlined,
   CheckCircleOutlined,
+  ShoppingCartOutlined,
+  EnvironmentOutlined,
+  CalendarOutlined,
 } from "@ant-design/icons";
 import { placeOrder } from "../../../Redux/Slice/ctp001Slice";
 import {
   fetchSalesOrderById,
   fetchOrderDeliveryAddress,
 } from "../../../Redux/Slice/orderSlice";
+import {
+  fetchCTP002ProductVariants,
+  selectCTP002VariantsMap,
+  selectCTP002VariantsLoadingMap,
+} from "../../../Redux/Slice/productSlice";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const { Option } = Select;
-
 const BACKEND_BASE_URL = "https://testing.frankotrading.com";
+
+/* ════════════════════════════════════════════
+   HELPERS
+════════════════════════════════════════════ */
+
+const normalizeId = (v) => {
+  const s = String(v ?? "").trim();
+  return ["", "undefined", "null", "nan"].includes(s.toLowerCase()) ? "" : s;
+};
+
+const normalizeText = (v) =>
+  String(v || "")
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const fmt = (n) => {
+  const num = Number(n || 0);
+  return Number.isNaN(num)
+    ? "0.00"
+    : num.toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+};
+
+const fmtDate = (d) => {
+  if (!d) return "N/A";
+  try {
+    return new Date(d).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return "N/A";
+  }
+};
+
+const imgUrl = (path) => {
+  if (!path) return null;
+  const f = String(path)
+    .split("\\")
+    .pop()
+    .split("/")
+    .pop();
+  return f ? `${BACKEND_BASE_URL}/Media/Products_Images/${f}` : null;
+};
+
+const getField = (item, ...keys) => {
+  for (const k of keys) if (item?.[k] != null && item[k] !== "") return item[k];
+  return null;
+};
+
+/* ── Order item extractors ── */
+const itemProductId = (i) =>
+  normalizeId(
+    getField(
+      i,
+      "productId",
+      "ProductId",
+      "ProductID",
+      "productID",
+      "ctP002ProductId",
+      "CTP002ProductId"
+    )
+  );
+
+const itemPrice = (i) =>
+  Number(
+    getField(i, "price", "Price", "sellingPrice", "SellingPrice", "unitPrice", "amount") ?? 0
+  ) || 0;
+
+const itemQty = (i) =>
+  Number(getField(i, "quantity", "Quantity") ?? 0);
+
+const itemName = (i) =>
+  getField(i, "productName", "ProductName", "name", "Name") || "Unknown Product";
+
+const itemColor = (i) =>
+  getField(i, "color", "Color") || "";
+
+const itemKey = (i, idx) =>
+  normalizeId(
+    getField(
+      i,
+      "salesOrderDetailsId",
+      "SalesOrderDetailsId",
+      "orderDetailsId",
+      "OrderDetailsId",
+      "id",
+      "Id"
+    )
+  ) || `item-${idx}`;
+
+/* ── Variant row extractors ── */
+
+/**
+ * The parent product ID used to group/lookup variants.
+ * This is what fetchCTP002ProductVariants is called with.
+ */
+const rowParentId = (r, fallbackItem = null) =>
+  normalizeId(
+    getField(r, "ctP002ProductId", "CTP002ProductId") ||
+      itemProductId(fallbackItem || {})
+  );
+
+/**
+ * The variant's own unique ID.
+ * This is what goes in the placeOrder payload.
+ *
+ * Priority:
+ * 1. row.variantId (the variant's own ID from the backend)
+ * 2. row.ctP001ProductId (row identifier)
+ * 3. row._rowVariantId (internal metadata)
+ * 4. parent product ID as absolute fallback
+ */
+const rowVariantId = (r, fallbackItem = null) =>
+  normalizeId(
+    getField(r, "variantId", "VariantId") ||
+      getField(r, "ctP001ProductId", "CTP001ProductId") ||
+      getField(r, "_rowVariantId") ||
+      rowParentId(r, fallbackItem)
+  );
+
+const rowSelId = (r, f, i) =>
+  rowVariantId(r, f) || `${rowParentId(r, f)}-${i}`;
+
+const rowName = (r) =>
+  r?._displayName ||
+  r?.name ||
+  r?.variantName ||
+  [r?.color, r?.size].filter(Boolean).join(" / ") ||
+  "Website Product";
+
+const rowColor = (r) => r?.color || r?.Color || "";
+
+const rowPrice = (r) =>
+  Number(
+    getField(r, "_price", "sellingPrice", "SellingPrice", "price", "Price") ?? 0
+  ) || 0;
+
+const rowBCode = (r) => r?.bCode || r?.BCode || "855";
+
+const normalizePayment = (v) => {
+  const s = String(v || "").toLowerCase();
+  if (s.includes("mobile")) return "Mobile Money";
+  if (s.includes("card")) return "Card";
+  if (s.includes("bank")) return "Bank Transfer";
+  return "Cash";
+};
+
+const buildRows = (rows, item) => {
+  const map = new Map();
+  (rows || []).forEach((r, i) => {
+    const k = rowSelId(r, item, i);
+    if (k && !map.has(k)) map.set(k, r);
+  });
+  return [...map.values()];
+};
+
+const bestMatch = (item, rows) => {
+  if (!rows?.length) return null;
+  if (rows.length === 1) return rows[0];
+  const n = normalizeText(itemName(item));
+  const c = normalizeText(itemColor(item));
+  return (
+    rows.find((r) => normalizeText(rowName(r)) === n) ||
+    (n
+      ? rows.find((r) => {
+          const rn = normalizeText(rowName(r));
+          return rn && (n.includes(rn) || rn.includes(n));
+        })
+      : null) ||
+    (c
+      ? rows.find((r) => normalizeText(rowColor(r)) === c)
+      : null) ||
+    null
+  );
+};
+
+/* ════════════════════════════════════════════
+   STYLES
+════════════════════════════════════════════ */
+
+const styles = {
+  section: {
+    background: "#fafafa",
+    borderRadius: 10,
+    padding: "14px 16px",
+    marginBottom: 12,
+    border: "1px solid #f0f0f0",
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: "#555",
+    marginBottom: 10,
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+  },
+  infoRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "4px 0",
+    fontSize: 13,
+    color: "#444",
+  },
+  statsBar: {
+    display: "flex",
+    gap: 12,
+    marginBottom: 12,
+  },
+  statCard: {
+    flex: 1,
+    textAlign: "center",
+    background: "#fff",
+    borderRadius: 10,
+    padding: "12px 8px",
+    border: "1px solid #f0f0f0",
+  },
+  statValue: { fontSize: 16, fontWeight: 700, color: "#222" },
+  statLabel: { fontSize: 11, color: "#999", marginTop: 2 },
+  itemRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    padding: "10px 0",
+  },
+  itemImg: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    overflow: "hidden",
+    background: "#f3f4f6",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    border: "1px solid #eee",
+  },
+  footer: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "12px 0 0",
+  },
+};
+
+/* ════════════════════════════════════════════
+   COMPONENT
+════════════════════════════════════════════ */
 
 const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
   const dispatch = useDispatch();
-  const { salesOrder, loading, error, deliveryAddress } = useSelector(
-    (state) => state.orders
-  );
+  const mounted = useRef(true);
 
-  // ── Get currentCustomerDetails (adjust slice path if needed) ──────────
-  const currentCustomerDetails = useSelector(
-    (state) =>
-      state.customer?.currentCustomerDetails ||
-      state.customers?.currentCustomerDetails ||
-      state.auth?.currentCustomerDetails ||
+  const { salesOrder, loading, error, deliveryAddress } = useSelector(
+    (s) => s.orders
+  );
+  const customer = useSelector(
+    (s) =>
+      s.customer?.currentCustomerDetails ||
+      s.customers?.currentCustomerDetails ||
+      s.auth?.currentCustomerDetails ||
       {}
   );
-  // n1UId is the customerId we send to fulfilment
-  const n1UId = currentCustomerDetails?.n1UId || "";
+  const variantsMap = useSelector(selectCTP002VariantsMap);
+  const variantLoadingMap = useSelector(selectCTP002VariantsLoadingMap);
 
-  const [fulfilmentOpen, setFulfilmentOpen] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [sendingToFulfilment, setSendingToFulfilment] = useState(false);
-  // Tracks whether this order was already sent → disables the button
-  const [orderSent, setOrderSent] = useState(false);
-  const [fulfilmentForm] = Form.useForm();
+  const [fulfilOpen, setFulfilOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [selections, setSelections] = useState({});
+  const [form] = Form.useForm();
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const orders = useMemo(
+    () => (Array.isArray(salesOrder) ? salesOrder : []),
+    [salesOrder]
+  );
+
+  const productIds = useMemo(
+    () => [...new Set(orders.map(itemProductId).filter(Boolean))],
+    [orders]
+  );
 
   useEffect(() => {
     if (orderId && isModalVisible) {
@@ -75,1513 +345,761 @@ const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
     }
   }, [dispatch, orderId, isModalVisible]);
 
-  // Reset "sent" state whenever a new order is opened / modal closes
   useEffect(() => {
-    setOrderSent(false);
+    if (isModalVisible && productIds.length)
+      productIds.forEach((id) => dispatch(fetchCTP002ProductVariants(id)));
+  }, [dispatch, isModalVisible, productIds]);
+
+  useEffect(() => {
+    setSent(false);
+    setSelections({});
+    setFulfilOpen(false);
   }, [orderId, isModalVisible]);
 
-  // Reset form when fulfilment modal closes
   useEffect(() => {
-    if (!fulfilmentOpen) {
-      fulfilmentForm.resetFields();
+    if (!fulfilOpen && mounted.current) form.resetFields();
+  }, [fulfilOpen, form]);
+
+  /* ── Row retrieval ── */
+
+  const getRows = useCallback(
+    (item) => {
+      const pid = itemProductId(item);
+      const r = variantsMap?.[pid];
+      return Array.isArray(r) && r.length ? buildRows(r, item) : [];
+    },
+    [variantsMap]
+  );
+
+  /**
+   * Whether this item has any variant rows at all.
+   * If false, the product has no colour/size — we use the product ID directly.
+   */
+  const hasVariants = useCallback(
+    (item) => getRows(item).length > 0,
+    [getRows]
+  );
+
+  const getSelectedRow = useCallback(
+    (item, idx) => {
+      const rows = getRows(item);
+      if (!rows.length) return null; // No variants exist for this product
+
+      const explicit = normalizeId(selections[itemKey(item, idx)]);
+      if (explicit) {
+        const m = rows.find(
+          (r, ri) => rowSelId(r, item, ri) === explicit
+        );
+        if (m) return m;
+      }
+
+      return bestMatch(item, rows) || null;
+    },
+    [getRows, selections]
+  );
+
+  const getSelectedKey = useCallback(
+    (item, idx) => {
+      const k = normalizeId(selections[itemKey(item, idx)]);
+      if (k) return k;
+      const row = getSelectedRow(item, idx);
+      if (!row) return undefined;
+      const rows = getRows(item);
+      const ri = rows.indexOf(row);
+      return rowSelId(row, item, ri === -1 ? idx : ri);
+    },
+    [getRows, getSelectedRow, selections]
+  );
+
+  const displayPrice = useCallback(
+    (item, idx) => {
+      const p = rowPrice(getSelectedRow(item, idx));
+      return p > 0 ? p : itemPrice(item);
+    },
+    [getSelectedRow]
+  );
+
+  /* ── Computed values ── */
+
+  const total = useMemo(
+    () => orders.reduce((a, i, x) => a + displayPrice(i, x) * itemQty(i), 0),
+    [orders, displayPrice]
+  );
+
+  const totalQty = useMemo(
+    () => orders.reduce((a, i) => a + itemQty(i), 0),
+    [orders]
+  );
+
+  /**
+   * Items where variants EXIST but the user hasn't selected one.
+   *
+   * Items with NO variants at all are NOT missing — they use the product ID directly.
+   */
+  const missingVariantItems = useMemo(() => {
+    return orders.filter((item, idx) => {
+      const rows = getRows(item);
+      // If no variants exist, this item is fine — no selection needed
+      if (rows.length === 0) return false;
+      // If variants exist, one must be selected
+      const selected = getSelectedRow(item, idx);
+      return !selected;
+    });
+  }, [orders, getRows, getSelectedRow]);
+
+  const canSubmit = useMemo(
+    () => missingVariantItems.length === 0 && orders.length > 0,
+    [missingVariantItems, orders]
+  );
+
+  const variantOptions = useCallback(
+    (item) =>
+      getRows(item).map((r, i) => ({
+        value: rowSelId(r, item, i),
+        label:
+          rowPrice(r) > 0
+            ? `${rowName(r)} — ₵${fmt(rowPrice(r))}`
+            : rowName(r),
+      })),
+    [getRows]
+  );
+
+  const onVariantChange = useCallback(
+    (key, val) =>
+      setSelections((p) => ({ ...p, [key]: normalizeId(val) })),
+    []
+  );
+
+  const addr = deliveryAddress?.[0] || {};
+  const first = orders[0] || {};
+
+  /* ── Open fulfilment modal ── */
+
+  const openFulfil = useCallback(() => {
+    if (!orders.length) return message.warning("No items to fulfil.");
+    form.setFieldsValue({
+      customerId: customer?.n1UId || "",
+      customerName: addr.recipientName || first.fullName || "",
+      contactNumber: addr.recipientContactNumber || first.contactNumber || "",
+      deliveryAddress: addr.address || first.address || "",
+      paymentMode: normalizePayment(first.paymentMode),
+      paymentService: first.paymentService || "MTN",
+      paymentAccountNumber: first.paymentAccountNumber || "",
+      customerAccountType: "Agent",
+      geolocation: addr.geoLocation || "N/A",
+      bCode: "855",
+    });
+    setFulfilOpen(true);
+  }, [addr, customer, first, form, orders]);
+
+  /* ════════════════════════════════════════════
+     SUBMIT HANDLER
+     
+     KEY LOGIC:
+     - If item has variants → use selected row's variantId
+     - If item has NO variants → use the product's own ctP002ProductId
+       as the variantId (the backend treats it as "the product itself")
+  ════════════════════════════════════════════ */
+
+  const handleSubmit = async (values) => {
+    if (sending) return;
+
+    try {
+      if (missingVariantItems.length) {
+        return message.error(
+          `Please select a colour for ${missingVariantItems.length} item(s).`
+        );
+      }
+
+      const payload = orders.map((item, idx) => {
+        const rows = getRows(item);
+        const row = getSelectedRow(item, idx);
+
+        let vid;
+
+        if (row) {
+          // ✅ Item has a selected variant — use its variantId
+          vid = rowVariantId(row, item);
+        } else if (rows.length === 0) {
+          // ✅ Item has NO variants at all — use the product ID directly
+          vid = itemProductId(item);
+        } else {
+          // Variants exist but none selected (shouldn't happen due to validation)
+          throw new Error(
+            `Please select a colour for "${itemName(item)}".`
+          );
+        }
+
+        if (!vid) {
+          throw new Error(
+            `Cannot determine product ID for "${itemName(item)}". ` +
+              `No variantId or productId found.`
+          );
+        }
+
+        const price = displayPrice(item, idx);
+
+        return {
+          cartId: "",
+          variantId: vid,
+          price: Number(price),
+          quantity: itemQty(item),
+          customerId: values.customerId || "",
+          customerName: values.customerName || "",
+          contactNumber: values.contactNumber || "",
+          deliveryAddress: values.deliveryAddress || "",
+          geolocation: values.geolocation || "N/A",
+          paymentMode: values.paymentMode || "Cash",
+          paymentService: values.paymentService || "",
+          paymentAccountNumber: values.paymentAccountNumber || "",
+          customerAccountType: values.customerAccountType || "Agent",
+          bCode: row ? rowBCode(row) : values.bCode || "855",
+        };
+      });
+
+      setSending(true);
+      await dispatch(placeOrder(payload)).unwrap();
+      message.success(`${payload.length} item(s) sent to fulfillment.`);
+      setSent(true);
+      setFulfilOpen(false);
+    } catch (e) {
+      message.error(e?.message || "Fulfillment failed.");
+    } finally {
+      if (mounted.current) setSending(false);
     }
-  }, [fulfilmentOpen, fulfilmentForm]);
-
-  const formatPrice = (amount) =>
-    parseFloat(amount || 0).toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-
-  const formatDate = (dateString) => {
-    if (!dateString) return "N/A";
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
   };
 
-  const getImageUrl = (imagePath) => {
-    if (!imagePath) return null;
-    const fileName = String(imagePath).split("\\").pop().split("/").pop();
-    if (!fileName) return null;
-    return `${BACKEND_BASE_URL}/Media/Products_Images/${fileName}`;
-  };
+  /* ── Invoice ── */
 
-  const handleImageError = (e) => {
-    e.target.style.display = "none";
-    e.target.nextSibling.style.display = "flex";
-  };
+  const downloadInvoice = useCallback(async () => {
+    if (downloading || !orders.length) return;
+    setDownloading(true);
+    try {
+      const rows = orders
+        .map((i, x) => {
+          const p = displayPrice(i, x);
+          const q = itemQty(i);
+          const r = getSelectedRow(i, x);
+          const pid = itemProductId(i);
+          const hasRowVariants = hasVariants(i);
+          const variantLabel = r
+            ? rowName(r)
+            : hasRowVariants
+            ? "Not selected"
+            : "N/A (no colour)";
+          return `<tr><td>${x + 1}</td><td>${itemName(i)}</td><td>${variantLabel}</td><td>${q}</td><td>₵${fmt(p)}</td><td>₵${fmt(p * q)}</td></tr>`;
+        })
+        .join("");
 
-  const renderProductImage = (item) => {
-    const imageUrl = getImageUrl(item?.imagePath);
+      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Invoice ${orderCode || ""}</title><style>body{font-family:system-ui;padding:40px;color:#333}.header{text-align:center;margin-bottom:30px;border-bottom:2px solid #eee;padding-bottom:20px}.co{font-size:24px;color:#10b981;font-weight:bold}table{width:100%;border-collapse:collapse;margin-top:20px}th{background:#f4f4f4;text-align:left;padding:12px;border-bottom:2px solid #ddd}td{padding:12px;border-bottom:1px solid #eee}.total{text-align:right;font-size:20px;font-weight:bold;margin-top:30px;color:#10b981}</style></head><body><div class="header"><div class="co">Franko Trading Ltd.</div><h3>INVOICE #${orderCode || ""}</h3><p>${new Date().toLocaleDateString()}</p></div><div style="margin:20px 0"><strong>Bill To:</strong><br/>${addr.recipientName || first.fullName || "N/A"}<br/>${addr.address || first.address || "N/A"}<br/>Tel: ${addr.recipientContactNumber || first.contactNumber || "N/A"}</div><table><thead><tr><th>#</th><th>Item</th><th>Variant</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table><div class="total">TOTAL: ₵${fmt(total)}</div></body></html>`;
 
+      const w = window.open("", "_blank", "width=800,height=600");
+      if (!w) return message.error("Allow pop-ups to download invoice.");
+      w.document.write(html);
+      w.document.close();
+      w.onload = () =>
+        setTimeout(() => {
+          w.focus();
+          w.print();
+        }, 500);
+      message.success("Invoice opened for printing.");
+    } catch (e) {
+      message.error("Failed to generate invoice.");
+    } finally {
+      if (mounted.current) setDownloading(false);
+    }
+  }, [
+    downloading,
+    orders,
+    displayPrice,
+    getSelectedRow,
+    hasVariants,
+    orderCode,
+    addr,
+    first,
+    total,
+  ]);
+
+  /* ── Image thumbnail ── */
+  const ImgThumb = ({ item }) => {
+    const url = imgUrl(item?.imagePath);
     return (
-      <div style={{ position: "relative", flexShrink: 0 }}>
-        <div
-          style={{
-            width: "60px",
-            height: "60px",
-            borderRadius: "10px",
-            overflow: "hidden",
-            boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
-            background: "linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)",
-            border: "1.5px solid #f9fafb",
-          }}
-        >
-          {imageUrl ? (
-            <>
-              <img
-                src={imageUrl}
-                alt={item?.productName || "Product"}
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                onError={handleImageError}
-              />
-              <div
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  display: "none",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background:
-                    "linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)",
-                }}
-              >
-                <ShoppingCartOutlined
-                  style={{ color: "#9ca3af", fontSize: "20px" }}
-                />
-              </div>
-            </>
-          ) : (
-            <div
-              style={{
-                width: "100%",
-                height: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: "linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)",
-              }}
-            >
-              <ShoppingCartOutlined
-                style={{ color: "#9ca3af", fontSize: "20px" }}
-              />
-            </div>
-          )}
-        </div>
-
-        <Badge
-          count={item?.quantity || 0}
-          style={{
-            position: "absolute",
-            top: "-4px",
-            right: "-4px",
-            backgroundColor: "#10b981",
-            boxShadow: "0 2px 6px rgba(16, 185, 129, 0.3)",
-            fontSize: "10px",
-            height: "18px",
-            minWidth: "18px",
-            lineHeight: "18px",
-          }}
-        />
+      <div style={styles.itemImg}>
+        {url ? (
+          <img
+            src={url}
+            alt=""
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            onError={(e) => {
+              e.target.style.display = "none";
+            }}
+          />
+        ) : (
+          <ShoppingCartOutlined style={{ color: "#bbb", fontSize: 18 }} />
+        )}
       </div>
     );
   };
 
-  const generateInvoiceHTML = () => {
-    if (!salesOrder || salesOrder.length === 0) return null;
+  /* ════════════════════════════════════════════
+     RENDER
+  ════════════════════════════════════════════ */
 
-    const order = salesOrder[0];
-    const address = deliveryAddress?.[0] || {};
-    const currentDate = new Date();
-
-    return `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Invoice - ${order?.orderCode || orderCode}</title>
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: 'Arial', 'Helvetica', sans-serif; margin: 0; padding: 20px; color: #2d3748; line-height: 1.6; background-color: #ffffff; }
-          .invoice-container { max-width: 800px; margin: 0 auto; background: white; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); border-radius: 8px; overflow: hidden; }
-          .header { background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); color: white; padding: 30px; text-align: center; }
-          .company-name { font-size: 32px; font-weight: bold; margin-bottom: 8px; text-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-          .company-info { font-size: 14px; opacity: 0.9; font-weight: 300; }
-          .invoice-title { font-size: 36px; font-weight: bold; margin: 30px 0; text-align: center; color: #4CAF50; text-transform: uppercase; letter-spacing: 2px; }
-          .content { padding: 30px; }
-          .info-section { display: flex; justify-content: space-between; margin-bottom: 30px; gap: 30px; }
-          .invoice-info, .customer-info { flex: 1; background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #4CAF50; }
-          .section-title { color: #4CAF50; font-size: 18px; font-weight: bold; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
-          .info-row { margin-bottom: 8px; display: flex; justify-content: space-between; }
-          .info-label { font-weight: 600; color: #495057; min-width: 120px; }
-          .info-value { color: #212529; font-weight: 500; }
-          table { width: 100%; border-collapse: collapse; margin: 20px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; }
-          thead { background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); }
-          th { color: white; font-weight: bold; padding: 15px 12px; text-align: left; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
-          td { padding: 15px 12px; border-bottom: 1px solid #e9ecef; font-size: 14px; }
-          tbody tr:nth-child(even) { background-color: #f8f9fa; }
-          .text-right { text-align: right; }
-          .text-center { text-align: center; }
-          .total-section { margin-top: 30px; text-align: right; }
-          .subtotal-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #dee2e6; font-size: 14px; }
-          .total-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 20px; color: #4CAF50; padding: 15px 0; border-top: 2px solid #4CAF50; margin-top: 10px; }
-          .footer { margin-top: 40px; text-align: center; color: #6c757d; font-size: 12px; padding-top: 20px; border-top: 1px solid #dee2e6; }
-          .thank-you { font-size: 16px; color: #4CAF50; font-weight: 600; margin-bottom: 10px; }
-          .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 120px; color: rgba(76, 175, 80, 0.05); font-weight: bold; z-index: -1; pointer-events: none; }
-          @media print { body { margin: 0; padding: 0; background: white; } .invoice-container { box-shadow: none; border-radius: 0; } .header, thead { background: #4CAF50 !important; -webkit-print-color-adjust: exact; } th { color: white !important; -webkit-print-color-adjust: exact; } }
-        </style>
-      </head>
-      <body>
-        <div class="watermark">FRANKO TRADING</div>
-        <div class="invoice-container">
-          <div class="header">
-            <div class="company-name">Franko Trading Ltd.</div>
-            <div class="company-info">
-              123 Adabraka Street, Accra, Ghana<br>
-              Phone: +233 123 456 789 | Email: online@frankotrading.com<br>
-              Website: www.frankotrading.com
-            </div>
-          </div>
-          <div class="content">
-            <div class="invoice-title">INVOICE</div>
-            <div class="info-section">
-              <div class="invoice-info">
-                <div class="section-title">Invoice Details</div>
-                <div class="info-row"><span class="info-label">Order Code:</span><span class="info-value">${
-                  order?.orderCode || orderCode
-                }</span></div>
-                <div class="info-row"><span class="info-label">Order Date:</span><span class="info-value">${formatDate(
-                  order?.orderDate
-                )}</span></div>
-                <div class="info-row"><span class="info-label">Invoice Date:</span><span class="info-value">${formatDate(
-                  currentDate
-                )}</span></div>
-                <div class="info-row"><span class="info-label">Status:</span><span class="info-value" style="color: #28a745; font-weight: 600;">Confirmed</span></div>
-              </div>
-              <div class="customer-info">
-                <div class="section-title">Bill To</div>
-                <div class="info-row"><span class="info-label">Name:</span><span class="info-value">${
-                  address?.recipientName || "N/A"
-                }</span></div>
-                <div class="info-row"><span class="info-label">Contact:</span><span class="info-value">${
-                  address?.recipientContactNumber || "N/A"
-                }</span></div>
-                <div class="info-row"><span class="info-label">Address:</span><span class="info-value">${
-                  address?.address || "N/A"
-                }</span></div>
-                ${
-                  address?.orderNote
-                    ? `<div class="info-row"><span class="info-label">Note:</span><span class="info-value" style="font-style: italic;">${address.orderNote}</span></div>`
-                    : ""
-                }
-              </div>
-            </div>
-            <table>
-              <thead>
-                <tr>
-                  <th style="width: 60px;">SN</th>
-                  <th>Product Description</th>
-                  <th style="width: 80px;" class="text-center">Qty</th>
-                  <th style="width: 120px;" class="text-right">Unit Price</th>
-                  <th style="width: 120px;" class="text-right">Total Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${salesOrder
-                  .map(
-                    (item, index) => `
-                  <tr>
-                    <td class="text-center" style="font-weight: 600;">${
-                      index + 1
-                    }</td>
-                    <td>
-                      <div style="font-weight: 600; color: #212529;">${
-                        item.productName || "Product Name Not Available"
-                      }</div>
-                      <div style="font-size: 12px; color: #6c757d; margin-top: 2px;">Item Code: PRD${String(
-                        index + 1
-                      ).padStart(3, "0")}</div>
-                    </td>
-                    <td class="text-center" style="font-weight: 600;">${
-                      item.quantity || 0
-                    }</td>
-                    <td class="text-right">₵${formatPrice(item.price)}</td>
-                    <td class="text-right" style="font-weight: 600;">₵${formatPrice(
-                      item.price * item.quantity
-                    )}</td>
-                  </tr>`
-                  )
-                  .join("")}
-              </tbody>
-            </table>
-            <div class="total-section">
-              <div class="subtotal-row"><span>Subtotal:</span><span>₵${formatPrice(
-                salesOrder.reduce(
-                  (total, item) => total + item.price * item.quantity,
-                  0
-                )
-              )}</span></div>
-              <div class="subtotal-row"><span>Tax (0%):</span><span>₵0.00</span></div>
-              <div class="subtotal-row"><span>Shipping:</span><span>₵0.00</span></div>
-              <div class="total-row"><span>TOTAL AMOUNT:</span><span>₵${formatPrice(
-                salesOrder.reduce(
-                  (total, item) => total + item.price * item.quantity,
-                  0
-                )
-              )}</span></div>
-            </div>
-            <div class="footer">
-              <div class="thank-you">Thank you for your business!</div>
-              <p>This is a computer-generated invoice and does not require a signature.</p>
-              <p>For any queries, please contact us at online@frankotrading.com or +233 123 456 789</p>
-              <p style="margin-top: 10px; font-size: 11px;">Generated on ${currentDate.toLocaleString(
-                "en-US",
-                {
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                }
-              )}</p>
-            </div>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-  };
-
-  const downloadInvoice = async () => {
-    try {
-      setIsDownloading(true);
-
-      if (!salesOrder || salesOrder.length === 0) {
-        message.error("No order data available for invoice generation");
-        return;
-      }
-
-      const invoiceHTML = generateInvoiceHTML();
-      if (!invoiceHTML) {
-        message.error("Failed to generate invoice content");
-        return;
-      }
-
-      const printWindow = window.open("", "_blank", "width=800,height=600");
-      if (!printWindow) {
-        message.error("Please allow pop-ups to download the invoice");
-        return;
-      }
-
-      printWindow.document.write(invoiceHTML);
-      printWindow.document.close();
-      printWindow.onload = function () {
-        setTimeout(() => {
-          printWindow.focus();
-          printWindow.print();
-        }, 500);
-      };
-
-      message.success(
-        "Invoice opened in new window. Please use your browser's print function to save as PDF."
-      );
-    } catch (err) {
-      console.error("Error generating invoice:", err);
-      message.error("Failed to generate invoice. Please try again.");
-    } finally {
-      setIsDownloading(false);
-    }
-  };
-
-  const safeOrders = Array.isArray(salesOrder) ? salesOrder : [];
-  const totalAmount = safeOrders.reduce(
-    (acc, item) => acc + Number(item.price || 0) * Number(item.quantity || 0),
-    0
-  );
-  const totalItems = safeOrders.reduce(
-    (acc, item) => acc + Number(item.quantity || 0),
-    0
-  );
-
-  // ═══════════════════════════════════════════════════════
-  // SEND TO FULFILMENT
-  // ═══════════════════════════════════════════════════════
-  const openFulfilmentModal = useCallback(() => {
-    if (safeOrders.length === 0) {
-      message.error("No order items to fulfil");
-      return;
-    }
-
-    const firstItem = safeOrders[0];
-    const address = deliveryAddress?.[0] || {};
-
-    fulfilmentForm.setFieldsValue({
-      // customerId = n1UId from currentCustomerDetails
-      customerId: n1UId || "",
-      // Auto-filled from GetOrderDeliveryAddress endpoint
-      customerName: address.recipientName || firstItem.fullName || "",
-      contactNumber:
-        address.recipientContactNumber || firstItem.contactNumber || "",
-      deliveryAddress: address.address || firstItem.address || "",
-      paymentMode: firstItem.paymentMode || "Cash on Delivery",
-      paymentService: "N/A",
-      paymentAccountNumber: firstItem.paymentAccountNumber || "",
-      customerAccountType: "Agent",
-      geolocation: address.geoLocation || "345",
-      bCode: "855",
-    });
-
-    setFulfilmentOpen(true);
-  }, [safeOrders, deliveryAddress, fulfilmentForm, n1UId]);
-
-  const handleSendToFulfilment = async (values) => {
-    try {
-      setSendingToFulfilment(true);
-
-      // Process each item in the order
-      for (const item of safeOrders) {
-        await dispatch(
-          placeOrder({
-            cartId: "",
-            productId: item.productId,
-            price: Number(item.price),
-            quantity: Number(item.quantity),
-            customerId: values.customerId, // n1UId
-            customerName: values.customerName,
-            contactNumber: values.contactNumber,
-            deliveryAddress: values.deliveryAddress,
-            geolocation: values.geolocation || "345",
-            paymentMode: values.paymentMode,
-            paymentService: values.paymentService,
-            paymentAccountNumber: values.paymentAccountNumber || "",
-            customerAccountType: values.customerAccountType,
-            bCode: values.bCode || "855",
-          })
-        ).unwrap();
-      }
-
-      message.success(
-        `Successfully sent ${safeOrders.length} item(s) to fulfilment`
-      );
-
-      // Mark as sent → disables the button(s)
-      setOrderSent(true);
-      setFulfilmentOpen(false);
-    } catch (err) {
-      console.error("Fulfilment error:", err);
-      message.error(err?.message || "Product not merged..contact content manager to merge product");
-    } finally {
-      setSendingToFulfilment(false);
-    }
-  };
-
-  // ═══════════════════════════════════════════════════════
-  // RENDER
-  // ═══════════════════════════════════════════════════════
   return (
     <>
-      {/* Main Order Modal */}
+      {/* ══════════ MAIN ORDER MODAL ══════════ */}
       <Modal
         title={
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "4px 0",
-            }}
-          >
-            <div
-              style={{
-                width: "32px",
-                height: "32px",
-                background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
-                borderRadius: "6px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                boxShadow: "0 2px 6px rgba(59, 130, 246, 0.3)",
-              }}
-            >
-              <ShoppingOutlined style={{ color: "white", fontSize: "16px" }} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div
-                style={{
-                  fontSize: "15px",
-                  fontWeight: 600,
-                  color: "#111827",
-                  marginBottom: "1px",
-                }}
-              >
-                Order Details
-              </div>
-              <div
-                style={{ fontSize: "11px", color: "#6b7280", fontWeight: 400 }}
-              >
-                #{orderCode}
-              </div>
-            </div>
-            <Tag
-              color={orderSent ? "purple" : "success"}
-              style={{
-                margin: 0,
-                fontSize: "10px",
-                padding: "1px 6px",
-                borderRadius: "4px",
-              }}
-            >
-              {orderSent ? "Fulfilled" : "Active"}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <ShoppingOutlined style={{ color: "#3b82f6", fontSize: 18 }} />
+            <span style={{ fontWeight: 600, flex: 1 }}>
+              Order #{orderCode || ""}
+            </span>
+            <Tag color={sent ? "purple" : "green"} style={{ margin: 0 }}>
+              {sent ? "Fulfilled" : "Active"}
             </Tag>
           </div>
         }
         open={isModalVisible}
         onCancel={onClose}
-        width="100%"
+        width={600}
         centered
-        className="order-modal-responsive"
-        style={{ maxWidth: "850px", margin: "0 auto" }}
-        styles={{
-          body: { padding: "12px" },
-          header: {
-            borderBottom: "1px solid #e5e7eb",
-            paddingBottom: "10px",
-            paddingTop: "10px",
-            background: "#fafafa",
-          },
-        }}
+        destroyOnClose
         footer={
-          safeOrders.length > 0 ? (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "10px",
-                padding: "12px",
-                background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
-                borderRadius: "6px",
-                border: "1px solid #e5e7eb",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-around",
-                  alignItems: "center",
-                  padding: "4px 0",
-                }}
-              >
-                <div style={{ textAlign: "center" }}>
-                  <div
-                    style={{
-                      fontSize: "10px",
-                      color: "#6b7280",
-                      marginBottom: "2px",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Total Items
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "16px",
-                      fontWeight: 700,
-                      color: "#3b82f6",
-                    }}
-                  >
-                    {totalItems}
-                  </div>
-                </div>
-                <Divider
-                  type="vertical"
-                  style={{
-                    height: "36px",
-                    margin: "0 6px",
-                    borderColor: "#d1d5db",
-                  }}
-                />
-                <div style={{ textAlign: "center" }}>
-                  <div
-                    style={{
-                      fontSize: "10px",
-                      color: "#6b7280",
-                      marginBottom: "2px",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Total Amount
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "18px",
-                      fontWeight: 700,
-                      color: "#10b981",
-                    }}
-                  >
-                    ₵{formatPrice(totalAmount)}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          <div style={styles.footer}>
+            <Text strong style={{ fontSize: 16, color: "#10b981" }}>
+              Total: ₵{fmt(total)}
+            </Text>
+            <Space>
+              <Tooltip title="Download Invoice">
                 <Button
-                  type="primary"
                   icon={<DownloadOutlined />}
                   onClick={downloadInvoice}
-                  loading={isDownloading}
-                  style={{
-                    flex: 1,
-                    background:
-                      "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                    border: "none",
-                    boxShadow: "0 3px 10px rgba(16, 185, 129, 0.3)",
-                    height: "40px",
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    borderRadius: "6px",
-                  }}
+                  loading={downloading}
                 >
-                  Download Invoice
+                  Invoice
                 </Button>
-
-                <Tooltip title="Alternative print method">
-                  <Button
-                    icon={<PrinterOutlined />}
-                    onClick={downloadInvoice}
-                    loading={isDownloading}
-                    style={{
-                      background:
-                        "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
-                      border: "none",
-                      color: "white",
-                      boxShadow: "0 3px 10px rgba(59, 130, 246, 0.3)",
-                      height: "40px",
-                      borderRadius: "6px",
-                      minWidth: "40px",
-                    }}
-                  />
-                </Tooltip>
-
-                <Button
-                  type="primary"
-                  icon={
-                    orderSent ? <CheckCircleOutlined /> : <SendOutlined />
-                  }
-                  onClick={openFulfilmentModal}
-                  disabled={orderSent}
-                  style={{
-                    flex: 1,
-                    background: orderSent
-                      ? "#d1d5db"
-                      : "linear-gradient(135deg, #722ed1 0%, #531dab 100%)",
-                    border: "none",
-                    boxShadow: orderSent
-                      ? "none"
-                      : "0 3px 10px rgba(114, 46, 209, 0.3)",
-                    height: "40px",
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    borderRadius: "6px",
-                  }}
-                >
-                  {orderSent ? "Sent to Fulfilment" : "Send to Fulfilment"}
-                </Button>
-              </div>
-            </div>
-          ) : null
+              </Tooltip>
+              <Button
+                type="primary"
+                icon={sent ? <CheckCircleOutlined /> : <SendOutlined />}
+                onClick={openFulfil}
+                disabled={sent || loading}
+              >
+                {sent ? "Fulfilled" : "Send to fulfilment"}
+              </Button>
+            </Space>
+          </div>
         }
       >
         {loading ? (
-          <div style={{ textAlign: "center", padding: "50px 20px" }}>
-            <Space direction="vertical" align="center" size="middle">
-              <Spin size="large" />
-              <Text type="secondary" style={{ fontSize: "13px" }}>
-                Loading order details...
-              </Text>
-            </Space>
+          <div style={{ textAlign: "center", padding: 60 }}>
+            <Spin size="large" />
           </div>
         ) : error ? (
-          <div style={{ textAlign: "center", padding: "50px 20px" }}>
-            <div
-              style={{
-                width: "56px",
-                height: "56px",
-                background: "#fee2e2",
-                borderRadius: "50%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                margin: "0 auto 12px",
-              }}
-            >
-              <ShoppingOutlined
-                style={{ color: "#ef4444", fontSize: "24px" }}
-              />
-            </div>
-            <Title
-              level={5}
-              type="danger"
-              style={{ fontSize: "15px", marginBottom: "6px" }}
-            >
-              Unable to load order
-            </Title>
-            <Text type="secondary" style={{ fontSize: "12px" }}>
-              {error?.message || error || "An unexpected error occurred"}
-            </Text>
-          </div>
-        ) : safeOrders.length === 0 ? (
-          <div style={{ padding: "36px 20px" }}>
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={
-                <div>
-                  <Text
-                    type="secondary"
-                    style={{
-                      display: "block",
-                      marginBottom: "6px",
-                      fontSize: "13px",
-                    }}
-                  >
-                    No order details found
-                  </Text>
-                  <Text type="secondary" style={{ fontSize: "11px" }}>
-                    Please check the order code and try again
-                  </Text>
-                </div>
-              }
-            />
-          </div>
+          <Alert
+            type="error"
+            message={error?.message || "Failed to load order"}
+          />
         ) : (
           <div
-            style={{
-              maxHeight: "65vh",
-              overflowY: "auto",
-              paddingRight: "2px",
-            }}
-            className="custom-scrollbar"
+            style={{ maxHeight: "62vh", overflowY: "auto", paddingRight: 4 }}
+            className="clean-scroll"
           >
-            {/* Order Summary Cards */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))",
-                gap: "8px",
-                marginBottom: "12px",
-              }}
-            >
-              <Card
-                className="summary-card"
-                style={{
-                  textAlign: "center",
-                  background:
-                    "linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)",
-                  border: "1px solid #93c5fd",
-                  borderRadius: "8px",
-                }}
-                bodyStyle={{ padding: "10px 8px" }}
-              >
+            {/* Stats */}
+            <div style={styles.statsBar}>
+              {[
+                {
+                  icon: <CalendarOutlined />,
+                  label: "Date",
+                  value: fmtDate(first?.orderDate),
+                },
+                {
+                  icon: <ShoppingCartOutlined />,
+                  label: "Items",
+                  value: totalQty,
+                },
+                {
+                  label: "Amount",
+                  value: `₵${fmt(total)}`,
+                  highlight: true,
+                },
+              ].map((s, i) => (
                 <div
+                  key={i}
                   style={{
-                    width: "32px",
-                    height: "32px",
-                    background: "#3b82f6",
-                    borderRadius: "50%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    margin: "0 auto 6px",
+                    ...styles.statCard,
+                    ...(s.highlight
+                      ? { background: "#f0fdf4", borderColor: "#bbf7d0" }
+                      : {}),
                   }}
                 >
-                  <CalendarOutlined
-                    style={{ color: "white", fontSize: "14px" }}
-                  />
+                  {s.icon && (
+                    <div style={{ color: "#888", marginBottom: 4 }}>
+                      {s.icon}
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      ...styles.statValue,
+                      ...(s.highlight ? { color: "#10b981" } : {}),
+                    }}
+                  >
+                    {s.value}
+                  </div>
+                  <div style={styles.statLabel}>{s.label}</div>
                 </div>
-                <div
-                  style={{
-                    fontSize: "9px",
-                    color: "#6b7280",
-                    marginBottom: "2px",
-                    fontWeight: 500,
-                  }}
-                >
-                  Order Date
-                </div>
-                <div
-                  style={{
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    color: "#1e40af",
-                  }}
-                >
-                  {formatDate(safeOrders[0]?.orderDate)}
-                </div>
-              </Card>
-
-              <Card
-                className="summary-card"
-                style={{
-                  textAlign: "center",
-                  background:
-                    "linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)",
-                  border: "1px solid #6ee7b7",
-                  borderRadius: "8px",
-                }}
-                bodyStyle={{ padding: "10px 8px" }}
-              >
-                <div
-                  style={{
-                    width: "32px",
-                    height: "32px",
-                    background: "#10b981",
-                    borderRadius: "50%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    margin: "0 auto 6px",
-                  }}
-                >
-                  <ShoppingCartOutlined
-                    style={{ color: "white", fontSize: "14px" }}
-                  />
-                </div>
-                <div
-                  style={{
-                    fontSize: "9px",
-                    color: "#6b7280",
-                    marginBottom: "2px",
-                    fontWeight: 500,
-                  }}
-                >
-                  Total Items
-                </div>
-                <div
-                  style={{
-                    fontSize: "16px",
-                    fontWeight: 700,
-                    color: "#065f46",
-                  }}
-                >
-                  {totalItems}
-                </div>
-              </Card>
-
-              <Card
-                className="summary-card"
-                style={{
-                  textAlign: "center",
-                  background:
-                    "linear-gradient(135deg, #fed7aa 0%, #fdba74 100%)",
-                  border: "1px solid #fb923c",
-                  borderRadius: "8px",
-                }}
-                bodyStyle={{ padding: "10px 8px" }}
-              >
-                <div
-                  style={{
-                    width: "32px",
-                    height: "32px",
-                    background: "#f97316",
-                    borderRadius: "50%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    margin: "0 auto 6px",
-                  }}
-                >
-                  <DollarOutlined
-                    style={{ color: "white", fontSize: "14px" }}
-                  />
-                </div>
-                <div
-                  style={{
-                    fontSize: "9px",
-                    color: "#6b7280",
-                    marginBottom: "2px",
-                    fontWeight: 500,
-                  }}
-                >
-                  Amount
-                </div>
-                <div
-                  style={{
-                    fontSize: "14px",
-                    fontWeight: 700,
-                    color: "#9a3412",
-                  }}
-                >
-                  ₵{formatPrice(totalAmount)}
-                </div>
-              </Card>
+              ))}
             </div>
 
-            {/* Delivery Address */}
-            <Card
-              style={{
-                marginBottom: "12px",
-                background: "white",
-                borderLeft: "3px solid #6366f1",
-                borderRadius: "8px",
-                border: "1px solid #e5e7eb",
-              }}
-              bodyStyle={{ padding: "10px" }}
-              title={
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: "26px",
-                      height: "26px",
-                      background: "#6366f1",
-                      borderRadius: "6px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <EnvironmentOutlined
-                      style={{ color: "white", fontSize: "13px" }}
-                    />
-                  </div>
-                  <span
-                    style={{
-                      fontSize: "13px",
-                      fontWeight: 600,
-                      color: "#111827",
-                    }}
-                  >
-                    Delivery Info
-                  </span>
-                </div>
-              }
-              headStyle={{
-                padding: "8px 10px",
-                minHeight: "auto",
-                borderBottom: "1px solid #f3f4f6",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "8px",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
-                    padding: "8px 10px",
-                    background: "#f9fafb",
-                    borderRadius: "6px",
-                  }}
-                >
-                  <UserOutlined
-                    style={{ color: "#6366f1", fontSize: "13px" }}
-                  />
-                  <div style={{ flex: 1 }}>
-                    <div
-                      style={{
-                        fontSize: "9px",
-                        color: "#6b7280",
-                        marginBottom: "1px",
-                        fontWeight: 500,
-                      }}
-                    >
-                      Recipient
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        color: "#111827",
-                      }}
-                    >
-                      {deliveryAddress?.[0]?.recipientName ||
-                        safeOrders[0]?.fullName ||
-                        "N/A"}
-                    </div>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
-                    padding: "8px 10px",
-                    background: "#f9fafb",
-                    borderRadius: "6px",
-                  }}
-                >
-                  <PhoneOutlined
-                    style={{ color: "#10b981", fontSize: "13px" }}
-                  />
-                  <div style={{ flex: 1 }}>
-                    <div
-                      style={{
-                        fontSize: "9px",
-                        color: "#6b7280",
-                        marginBottom: "1px",
-                        fontWeight: 500,
-                      }}
-                    >
-                      Contact
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        color: "#111827",
-                      }}
-                    >
-                      {deliveryAddress?.[0]?.recipientContactNumber ||
-                        safeOrders[0]?.contactNumber ||
-                        "N/A"}
-                    </div>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: "10px",
-                    padding: "8px 10px",
-                    background: "#f9fafb",
-                    borderRadius: "6px",
-                  }}
-                >
-                  <HomeOutlined
-                    style={{
-                      color: "#3b82f6",
-                      fontSize: "13px",
-                      marginTop: "2px",
-                    }}
-                  />
-                  <div style={{ flex: 1 }}>
-                    <div
-                      style={{
-                        fontSize: "9px",
-                        color: "#6b7280",
-                        marginBottom: "2px",
-                        fontWeight: 500,
-                      }}
-                    >
-                      Address
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "11px",
-                        color: "#374151",
-                        lineHeight: "1.4",
-                      }}
-                    >
-                      {deliveryAddress?.[0]?.address ||
-                        safeOrders[0]?.address ||
-                        "N/A"}
-                    </div>
-                  </div>
-                </div>
+            {/* Delivery */}
+            <div style={styles.section}>
+              <div style={styles.sectionTitle}>
+                <EnvironmentOutlined /> Delivery Info
               </div>
-            </Card>
-
-            {/* Products Section */}
-            <Card
-              title={
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: "26px",
-                        height: "26px",
-                        background: "#10b981",
-                        borderRadius: "6px",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <ShoppingCartOutlined
-                        style={{ color: "white", fontSize: "13px" }}
-                      />
-                    </div>
-                    <span
-                      style={{
-                        fontSize: "13px",
-                        fontWeight: 600,
-                        color: "#111827",
-                      }}
-                    >
-                      Order Items
-                    </span>
-                  </div>
-                  <Badge
-                    count={safeOrders.length}
-                    style={{
-                      backgroundColor: "#10b981",
-                      boxShadow: "0 2px 6px rgba(16, 185, 129, 0.3)",
-                      fontSize: "10px",
-                    }}
-                  />
+              {[
+                {
+                  icon: <UserOutlined />,
+                  text:
+                    addr.recipientName || first.fullName || "N/A",
+                },
+                {
+                  icon: <PhoneOutlined />,
+                  text:
+                    addr.recipientContactNumber ||
+                    first.contactNumber ||
+                    "N/A",
+                },
+                {
+                  icon: <HomeOutlined />,
+                  text: addr.address || first.address || "N/A",
+                },
+              ].map((r, i) => (
+                <div key={i} style={styles.infoRow}>
+                  <span style={{ color: "#999" }}>{r.icon}</span>{" "}
+                  {r.text}
                 </div>
-              }
-              style={{
-                background: "white",
-                borderLeft: "3px solid #10b981",
-                borderRadius: "8px",
-                border: "1px solid #e5e7eb",
-              }}
-              bodyStyle={{ padding: "10px" }}
-              headStyle={{
-                padding: "8px 10px",
-                minHeight: "auto",
-                borderBottom: "1px solid #f3f4f6",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "8px",
-                }}
-              >
-                {safeOrders.map((item, index) => (
+              ))}
+            </div>
+
+            {/* Items */}
+            <div style={styles.section}>
+              <div style={styles.sectionTitle}>
+                <ShoppingCartOutlined /> Items
+                <Tag
+                  color="blue"
+                  style={{ marginLeft: "auto", fontSize: 11 }}
+                >
+                  {orders.length}
+                </Tag>
+              </div>
+
+              {orders.map((item, idx) => {
+                const row = getSelectedRow(item, idx);
+                const p = displayPrice(item, idx);
+                const q = itemQty(item);
+                const hasRowVariants = hasVariants(item);
+
+                return (
                   <div
-                    key={index}
+                    key={itemKey(item, idx)}
                     style={{
-                      display: "flex",
-                      gap: "10px",
-                      padding: "10px",
-                      background: "#f9fafb",
-                      borderRadius: "8px",
-                      boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                      border: "1px solid #f3f4f6",
+                      ...styles.itemRow,
+                      borderBottom:
+                        idx < orders.length - 1
+                          ? "1px solid #f0f0f0"
+                          : "none",
                     }}
                   >
-                    {renderProductImage(item)}
-
+                    <ImgThumb item={item} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ marginBottom: "6px" }}>
-                        <div
-                          style={{
-                            fontSize: "13px",
-                            fontWeight: 600,
-                            color: "#111827",
-                            marginBottom: "1px",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {item?.productName || "Product Name Not Available"}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "10px",
-                            color: "#9ca3af",
-                            fontWeight: 500,
-                          }}
-                        >
-                          Item #{index + 1} • ID:{" "}
-                          {item?.productId?.slice(0, 8)}...
-                        </div>
-                      </div>
-
                       <div
                         style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(3, 1fr)",
-                          gap: "6px",
+                          fontWeight: 500,
+                          fontSize: 13,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
                         }}
                       >
-                        <div
-                          style={{
-                            textAlign: "center",
-                            padding: "6px 4px",
-                            background: "#dbeafe",
-                            borderRadius: "6px",
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: "8px",
-                              color: "#6b7280",
-                              marginBottom: "1px",
-                              fontWeight: 500,
-                            }}
+                        {itemName(item)}
+                      </div>
+                      <div style={{ marginTop: 2 }}>
+                        {row ? (
+                          <Tag
+                            color="blue"
+                            style={{ fontSize: 11, margin: 0 }}
                           >
-                            Qty
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "13px",
-                              fontWeight: 700,
-                              color: "#1e40af",
-                            }}
+                            {rowName(row)}
+                          </Tag>
+                        ) : hasRowVariants ? (
+                          <Tag
+                            color="warning"
+                            style={{ fontSize: 11, margin: 0 }}
                           >
-                            {item?.quantity || 0}
-                          </div>
-                        </div>
-                        <div
-                          style={{
-                            textAlign: "center",
-                            padding: "6px 4px",
-                            background: "#d1fae5",
-                            borderRadius: "6px",
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: "8px",
-                              color: "#6b7280",
-                              marginBottom: "1px",
-                              fontWeight: 500,
-                            }}
+                            Select Colour
+                          </Tag>
+                        ) : (
+                          <Tag
+                            color="default"
+                            style={{ fontSize: 11, margin: 0 }}
                           >
-                            Price
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "12px",
-                              fontWeight: 700,
-                              color: "#065f46",
-                            }}
-                          >
-                            ₵{formatPrice(item?.price || 0)}
-                          </div>
-                        </div>
-                        <div
-                          style={{
-                            textAlign: "center",
-                            padding: "6px 4px",
-                            background: "#fed7aa",
-                            borderRadius: "6px",
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: "8px",
-                              color: "#6b7280",
-                              marginBottom: "1px",
-                              fontWeight: 500,
-                            }}
-                          >
-                            Total
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "12px",
-                              fontWeight: 700,
-                              color: "#9a3412",
-                            }}
-                          >
-                            ₵
-                            {formatPrice(
-                              (item?.price || 0) * (item?.quantity || 0)
-                            )}
-                          </div>
-                        </div>
+                            No Colour Needed
+                          </Tag>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
+                      <div style={{ fontSize: 11, color: "#999" }}>
+                        {q} × ₵{fmt(p)}
+                      </div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>
+                        ₵{fmt(p * q)}
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            </Card>
+                );
+              })}
+            </div>
           </div>
         )}
+
+        <style>{`
+          .clean-scroll::-webkit-scrollbar { width: 3px; }
+          .clean-scroll::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 3px; }
+          @media (max-width: 640px) {
+            .ant-modal { max-width: 95vw !important; }
+          }
+        `}</style>
       </Modal>
 
-      {/* Fulfilment Modal */}
+      {/* ══════════ FULFILMENT MODAL ══════════ */}
       <Modal
         title={
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <div
-              style={{
-                width: "28px",
-                height: "28px",
-                background: "linear-gradient(135deg, #722ed1 0%, #531dab 100%)",
-                borderRadius: "6px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <SendOutlined style={{ color: "white", fontSize: "14px" }} />
-            </div>
-            <span style={{ fontSize: "16px", fontWeight: 600 }}>
-              Send to Fulfilment
-            </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <SendOutlined style={{ color: "#3b82f6" }} />
+            <span>Send to Fulfilment</span>
           </div>
         }
-        open={fulfilmentOpen}
-        onCancel={() => setFulfilmentOpen(false)}
+        open={fulfilOpen}
+        onCancel={() => setFulfilOpen(false)}
         footer={null}
-        width={700}
+        width={560}
+        centered
         destroyOnClose
       >
         <Form
-          form={fulfilmentForm}
+          form={form}
           layout="vertical"
-          onFinish={handleSendToFulfilment}
+          onFinish={handleSubmit}
+          size="middle"
+          initialValues={{ paymentMode: "Cash", customerAccountType: "Agent" }}
         >
+          <Alert
+            message={`Order: ${orderCode || ""}`}
+            type="info"
+            style={{ marginBottom: 16 }}
+            showIcon
+          />
+
           <div
             style={{
-              background: "#f8fafc",
-              padding: "16px",
-              borderRadius: "8px",
-              marginBottom: "20px",
-              border: "1px solid #e2e8f0",
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 12,
             }}
           >
-            <Title level={5} style={{ marginTop: 0, marginBottom: "12px" }}>
-              Order Summary
-            </Title>
-            <div style={{ marginBottom: "8px" }}>
-              <strong>Order Code:</strong> #{orderCode}
-            </div>
-            <div style={{ marginBottom: "8px" }}>
-              <strong>Items to fulfil:</strong> {safeOrders.length} item(s)
-            </div>
-            <div>
-              <strong>Total Amount:</strong> ₵{formatPrice(totalAmount)}
-            </div>
+            <Form.Item
+              name="customerId"
+              label="Agent ID"
+              rules={[{ required: true }]}
+            >
+              <Input disabled />
+            </Form.Item>
+            <Form.Item
+              name="customerName"
+              label="Recipient"
+              rules={[{ required: true, message: "Required" }]}
+            >
+              <Input placeholder="Full name" />
+            </Form.Item>
           </div>
-
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name="customerId"
-                label="Agent ID"
-                rules={[{ required: true, message: "Required" }]}
-              >
-                {/* Auto-filled from currentCustomerDetails.n1UId */}
-                <Input placeholder="Customer ID" readOnly />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="customerName"
-                label="Customer Name"
-                rules={[{ required: true, message: "Required" }]}
-              >
-                {/* Auto-filled from GetOrderDeliveryAddress.recipientName */}
-                <Input placeholder="Enter customer name" />
-              </Form.Item>
-            </Col>
-          </Row>
 
           <Form.Item
             name="contactNumber"
-            label="Contact Number"
+            label="Phone"
             rules={[{ required: true, message: "Required" }]}
           >
-            {/* Auto-filled from GetOrderDeliveryAddress.recipientContactNumber */}
-            <Input placeholder="Enter contact number" />
+            <Input prefix={<PhoneOutlined />} placeholder="+233 XX XXX XXXX" />
           </Form.Item>
 
           <Form.Item
             name="deliveryAddress"
-            label="Delivery Address"
+            label="Address"
             rules={[{ required: true, message: "Required" }]}
           >
-            <Input.TextArea rows={3} placeholder="Enter delivery address" />
+            <Input.TextArea rows={2} placeholder="Delivery location" />
           </Form.Item>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name="paymentMode"
-                label="Payment Mode"
-                rules={[{ required: true, message: "Required" }]}
-              >
-                <Select placeholder="Select payment mode">
-                  <Option value="Cash on Delivery">Cash on Delivery</Option>
-                  <Option value="Pick up">Pick up</Option>
-                  <Option value="Mobile Money">Mobile Money</Option>
-                  <Option value="Card">Card</Option>
-                  <Option value="Bank Transfer">Bank Transfer</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="paymentService"
-                label="Payment Service"
-                rules={[{ required: true, message: "Required" }]}
-              >
-                <Input placeholder="e.g., MTN, Vodafone" />
-              </Form.Item>
-            </Col>
-          </Row>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 12,
+            }}
+          >
+            <Form.Item name="paymentMode" label="Payment">
+              <Select>
+                <Option value="Cash">Cash</Option>
+                <Option value="Mobile Money">Mobile Money</Option>
+                <Option value="Bank Transfer">Bank Transfer</Option>
+                <Option value="Card">Card</Option>
+              </Select>
+            </Form.Item>
+            <Form.Item name="paymentService" label="Network/Bank">
+              <Input placeholder="MTN, Vodafone..." />
+            </Form.Item>
+          </div>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="paymentAccountNumber" label="Payment Account #">
-                <Input placeholder="Account number (optional)" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="customerAccountType"
-                label="Account Type"
-                rules={[{ required: true, message: "Required" }]}
-              >
-                <Select>
-                  <Option value="Agent">Agent</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
+          <Divider style={{ margin: "12px 0", fontSize: 13 }}>
+            Confirm Colours
+          </Divider>
 
-          {/* Hidden fields carried in the payload */}
+          {/* Only show warning if items with variants are missing selections */}
+          {missingVariantItems.length > 0 && (
+            <Alert
+              type="warning"
+              message={`Select a colour for ${missingVariantItems.length} item(s) before submitting.`}
+              showIcon
+              style={{ marginBottom: 12 }}
+            />
+          )}
+
+          <div
+            style={{
+              maxHeight: 240,
+              overflowY: "auto",
+              marginBottom: 16,
+            }}
+            className="clean-scroll"
+          >
+            {orders.map((item, idx) => {
+              const key = itemKey(item, idx);
+              const opts = variantOptions(item);
+              const sel = getSelectedKey(item, idx);
+              const pid = itemProductId(item);
+              const isLoading = Boolean(variantLoadingMap?.[pid]);
+              const hasRowVariants = hasVariants(item);
+
+              return (
+                <div
+                  key={key}
+                  style={{
+                    marginBottom: 10,
+                    paddingBottom: 10,
+                    borderBottom: "1px solid #f5f5f5",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      marginBottom: 4,
+                    }}
+                  >
+                    <Text strong style={{ fontSize: 13 }}>
+                      {itemName(item)}{" "}
+                      <Text type="secondary">×{itemQty(item)}</Text>
+                    </Text>
+                    <Text style={{ fontSize: 13, color: "#10b981" }}>
+                      ₵{fmt(displayPrice(item, idx))}
+                    </Text>
+                  </div>
+
+                  {hasRowVariants ? (
+                    /* ── Has variants: show colour dropdown ── */
+                    <Select
+                      showSearch
+                      allowClear
+                      placeholder="Choose colour..."
+                      optionFilterProp="label"
+                      value={sel}
+                      onChange={(v) => onVariantChange(key, v)}
+                      options={opts}
+                      loading={isLoading}
+                      disabled={!opts.length && !isLoading}
+                      notFoundContent={
+                        isLoading ? "Loading..." : "No colour found"
+                      }
+                      style={{ width: "100%" }}
+                      size="small"
+                    />
+                  ) : (
+                    /* ── No variants: show info tag ── */
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "6px 10px",
+                        background: "#f6ffed",
+                        border: "1px solid #b7eb8f",
+                        borderRadius: 6,
+                        fontSize: 12,
+                        color: "#52c41a",
+                      }}
+                    >
+                      <CheckCircleOutlined />
+                      <span>
+                   No colour selction needed
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              paddingTop: 8,
+              borderTop: "1px solid #f0f0f0",
+            }}
+          >
+            <Text strong style={{ fontSize: 16, color: "#10b981" }}>
+              ₵{fmt(total)}
+            </Text>
+            <Space>
+              <Button onClick={() => setFulfilOpen(false)}>Cancel</Button>
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={sending}
+                disabled={!canSubmit || sent}
+                icon={<SendOutlined />}
+              >
+                Confirm
+              </Button>
+            </Space>
+          </div>
+
           <Form.Item name="geolocation" hidden>
             <Input />
           </Form.Item>
           <Form.Item name="bCode" hidden>
             <Input />
           </Form.Item>
-
-          <div
-            style={{
-              marginTop: "24px",
-              padding: "16px",
-              background: "#f0f9ff",
-              border: "1px solid #bae6fd",
-              borderRadius: "8px",
-            }}
-          >
-            <Title level={5} style={{ marginTop: 0, marginBottom: "8px" }}>
-              Items to be sent:
-            </Title>
-            <div style={{ maxHeight: "200px", overflowY: "auto" }}>
-              {safeOrders.map((item, index) => (
-                <div
-                  key={index}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    padding: "8px",
-                    borderBottom: "1px solid #e2e8f0",
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 500 }}>{item.productName}</div>
-                    <div style={{ fontSize: "12px", color: "#64748b" }}>
-                      Qty: {item.quantity} × ₵{formatPrice(item.price)}
-                    </div>
-                  </div>
-                  <div style={{ fontWeight: 600 }}>
-                    ₵{formatPrice(item.price * item.quantity)}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <Divider style={{ margin: "12px 0" }} />
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontWeight: 700,
-                fontSize: "16px",
-              }}
-            >
-              <span>Total:</span>
-              <span>₵{formatPrice(totalAmount)}</span>
-            </div>
-          </div>
-
-          <Form.Item style={{ marginTop: "24px", marginBottom: 0 }}>
-            <Space style={{ width: "100%", justifyContent: "flex-end" }}>
-              <Button onClick={() => setFulfilmentOpen(false)}>Cancel</Button>
-              <Button
-                type="primary"
-                htmlType="submit"
-                loading={sendingToFulfilment}
-                disabled={orderSent}
-                icon={
-                  orderSent ? <CheckCircleOutlined /> : <SendOutlined />
-                }
-                style={{
-                  background: orderSent
-                    ? "#d1d5db"
-                    : "linear-gradient(135deg, #722ed1 0%, #531dab 100%)",
-                  border: "none",
-                  boxShadow: orderSent
-                    ? "none"
-                    : "0 3px 10px rgba(114, 46, 209, 0.3)",
-                }}
-              >
-                {orderSent
-                  ? "Sent to Fulfilment"
-                  : "Confirm & Send to Fulfilment"}
-              </Button>
-            </Space>
+          <Form.Item name="customerAccountType" hidden>
+            <Input />
+          </Form.Item>
+          <Form.Item name="paymentAccountNumber" hidden>
+            <Input />
           </Form.Item>
         </Form>
       </Modal>
-
-      <style jsx global>{`
-        .order-modal-responsive .ant-modal-header {
-          background: #fafafa;
-        }
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: #f1f1f1;
-          border-radius: 2px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #c1c1c1;
-          border-radius: 2px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #a8a8a8;
-        }
-        @media (max-width: 768px) {
-          .order-modal-responsive .ant-modal {
-            padding: 0 6px;
-            max-width: 95vw !important;
-          }
-          .order-modal-responsive .ant-modal-body {
-            padding: 10px;
-          }
-          .order-modal-responsive .ant-modal-footer {
-            padding: 10px;
-          }
-          .order-modal-responsive .ant-modal-header {
-            padding: 10px 12px;
-          }
-        }
-        @media (max-width: 480px) {
-          .summary-card .ant-card-body {
-            padding: 8px 6px !important;
-          }
-        }
-      `}</style>
     </>
   );
 };

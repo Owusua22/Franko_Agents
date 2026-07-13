@@ -54,13 +54,6 @@ const THEME = {
 const SIDEBAR_WIDTH = 260;
 const COLLAPSED_WIDTH = 72;
 
-/* ────────────────────────────────────────────
-   Sub-components
-──────────────────────────────────────────── */
-
-
-
-/** Sidebar logo / brand area */
 const SidebarBrand = ({ collapsed, onToggle }) => (
   <div
     style={{
