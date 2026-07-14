@@ -4,6 +4,7 @@ import { useLocation, Navigate } from 'react-router-dom';
 import AgentDashboard from './AgentDashboard';
 import AgentOrders from './AgentOrders';
 import AgentHome from '../AgentHome';
+import MergedProducts from './MergedProducts';
 
 
 const AgentPage = () => {
@@ -17,6 +18,8 @@ const AgentPage = () => {
         return <AgentDashboard />;
       case '/agent/orders':
         return <AgentOrders />;
+        case '/agent/products':
+        return <MergedProducts/>;
       case '/agent':
         return <Navigate to="/agent/dashboard" />;
       default:

@@ -5,6 +5,7 @@ import AuthPage from "./Pages/AuthPage";
 import AgentHome from "./Pages/Agents/AgentHome";
 import AgentDashboard from "./Pages/Agents/AgentPage/AgentDashboard";
 import AgentOrders from "./Pages/Agents/AgentPage/AgentOrders";
+import MergedProducts from "./Pages/Agents/AgentPage/MergedProducts";
 
 function App() {
   return (
@@ -37,6 +38,14 @@ function App() {
           element={
             <AgentHome>
               <AgentOrders />
+            </AgentHome>
+          }
+        />
+            <Route
+          path="/agent/products"
+          element={
+            <AgentHome>
+              <MergedProducts />
             </AgentHome>
           }
         />

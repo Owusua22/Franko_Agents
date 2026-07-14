@@ -27,12 +27,6 @@ const toErrorPayload = (error, fallback) => {
   return serverError || error?.message || fallback;
 };
 
-/* ════════════════════════════════════════════
-   ASYNC THUNKS
-════════════════════════════════════════════ */
-
-// Get Merged Products
-// Endpoint: GET /GetMergedProducts
 export const getMergedProducts = createAsyncThunk(
   "ctp/getMergedProducts",
   async (_, { rejectWithValue }) => {

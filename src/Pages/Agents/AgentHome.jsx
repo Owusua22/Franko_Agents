@@ -175,13 +175,12 @@ const AgentHome = ({ children }) => {
     dispatch(logoutCustomer());
     navigate('/', { replace: true });
   };
-
-  const selectedKey = useMemo(() => {
-    const path = location.pathname;
-    if (path.includes('/orders')) return '2';
-    return '1';
-  }, [location.pathname]);
-
+const selectedKey = useMemo(() => {
+  const path = location.pathname;
+  if (path.includes('/orders')) return '2';
+  if (path.includes('/products')) return '3';
+  return '1'; // dashboard
+}, [location.pathname]);
   const menuItems = [
     {
       key: '1',
@@ -195,7 +194,14 @@ const AgentHome = ({ children }) => {
       label: 'Orders',
       onClick: () => navigate('/agent/orders'),
     },
+ {
+      key: '3',
+      icon: <ShoppingOutlined style={{ fontSize: 17 }} />,
+      label: 'Products',
+      onClick: () => navigate('/agent/products'),
+    },
   ].map((item) => ({ ...item, className: 'agent-nav-item' }));
+
 
   return (
     <Layout style={{ minHeight: '100vh', backgroundColor: '#f1f5f9' }}>

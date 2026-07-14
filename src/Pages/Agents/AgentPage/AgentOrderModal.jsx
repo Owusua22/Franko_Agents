@@ -139,26 +139,12 @@ const itemKey = (i, idx) =>
 
 /* ── Variant row extractors ── */
 
-/**
- * The parent product ID used to group/lookup variants.
- * This is what fetchCTP002ProductVariants is called with.
- */
 const rowParentId = (r, fallbackItem = null) =>
   normalizeId(
     getField(r, "ctP002ProductId", "CTP002ProductId") ||
       itemProductId(fallbackItem || {})
   );
 
-/**
- * The variant's own unique ID.
- * This is what goes in the placeOrder payload.
- *
- * Priority:
- * 1. row.variantId (the variant's own ID from the backend)
- * 2. row.ctP001ProductId (row identifier)
- * 3. row._rowVariantId (internal metadata)
- * 4. parent product ID as absolute fallback
- */
 const rowVariantId = (r, fallbackItem = null) =>
   normalizeId(
     getField(r, "variantId", "VariantId") ||
@@ -319,6 +305,7 @@ const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [selections, setSelections] = useState({});
+  const [fulfilError, setFulfilError] = useState(null); // new state for error display
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -354,6 +341,7 @@ const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
     setSent(false);
     setSelections({});
     setFulfilOpen(false);
+    setFulfilError(null); // clear any previous fulfilment error
   }, [orderId, isModalVisible]);
 
   useEffect(() => {
@@ -371,10 +359,6 @@ const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
     [variantsMap]
   );
 
-  /**
-   * Whether this item has any variant rows at all.
-   * If false, the product has no colour/size — we use the product ID directly.
-   */
   const hasVariants = useCallback(
     (item) => getRows(item).length > 0,
     [getRows]
@@ -383,7 +367,7 @@ const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
   const getSelectedRow = useCallback(
     (item, idx) => {
       const rows = getRows(item);
-      if (!rows.length) return null; // No variants exist for this product
+      if (!rows.length) return null;
 
       const explicit = normalizeId(selections[itemKey(item, idx)]);
       if (explicit) {
@@ -431,17 +415,10 @@ const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
     [orders]
   );
 
-  /**
-   * Items where variants EXIST but the user hasn't selected one.
-   *
-   * Items with NO variants at all are NOT missing — they use the product ID directly.
-   */
   const missingVariantItems = useMemo(() => {
     return orders.filter((item, idx) => {
       const rows = getRows(item);
-      // If no variants exist, this item is fine — no selection needed
       if (rows.length === 0) return false;
-      // If variants exist, one must be selected
       const selected = getSelectedRow(item, idx);
       return !selected;
     });
@@ -477,6 +454,7 @@ const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
 
   const openFulfil = useCallback(() => {
     if (!orders.length) return message.warning("No items to fulfil.");
+    setFulfilError(null); // clear any previous error when opening
     form.setFieldsValue({
       customerId: customer?.n1UId || "",
       customerName: addr.recipientName || first.fullName || "",
@@ -494,11 +472,6 @@ const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
 
   /* ════════════════════════════════════════════
      SUBMIT HANDLER
-     
-     KEY LOGIC:
-     - If item has variants → use selected row's variantId
-     - If item has NO variants → use the product's own ctP002ProductId
-       as the variantId (the backend treats it as "the product itself")
   ════════════════════════════════════════════ */
 
   const handleSubmit = async (values) => {
@@ -518,13 +491,10 @@ const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
         let vid;
 
         if (row) {
-          // ✅ Item has a selected variant — use its variantId
           vid = rowVariantId(row, item);
         } else if (rows.length === 0) {
-          // ✅ Item has NO variants at all — use the product ID directly
           vid = itemProductId(item);
         } else {
-          // Variants exist but none selected (shouldn't happen due to validation)
           throw new Error(
             `Please select a colour for "${itemName(item)}".`
           );
@@ -563,7 +533,23 @@ const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
       setSent(true);
       setFulfilOpen(false);
     } catch (e) {
-      message.error(e?.message || "Fulfillment failed.");
+      // Detect the specific error and display a user-friendly alert
+      const errMsg =
+        e?.response?.data?.responseMessage ||
+        e?.message ||
+        " Please contact the web content manager.";
+
+      if (
+        errMsg
+          .toLowerCase()
+          .includes("one or more products have not been merged")
+      ) {
+        setFulfilError(
+          "One or more products have not been merged. Please contact the web content manager."
+        );
+      } else {
+        message.error(errMsg);
+      }
     } finally {
       if (mounted.current) setSending(false);
     }
@@ -874,6 +860,7 @@ const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
       </Modal>
 
       {/* ══════════ FULFILMENT MODAL ══════════ */}
+          
       <Modal
         title={
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -882,11 +869,20 @@ const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
           </div>
         }
         open={fulfilOpen}
-        onCancel={() => setFulfilOpen(false)}
+        onCancel={() => {
+          setFulfilOpen(false);
+          setFulfilError(null);
+        }}
         footer={null}
         width={560}
         centered
         destroyOnClose
+        // ✅ Let the modal itself manage a scroll region; cap to viewport
+        styles={{
+          content: { padding: 0, display: "flex", flexDirection: "column", maxHeight: "88vh" },
+          header: { padding: "16px 20px", marginBottom: 0, flexShrink: 0 },
+          body: { padding: 0, display: "flex", flexDirection: "column", overflow: "hidden", flex: 1, minHeight: 0 },
+        }}
       >
         <Form
           form={form}
@@ -894,186 +890,205 @@ const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
           onFinish={handleSubmit}
           size="middle"
           initialValues={{ paymentMode: "Cash", customerAccountType: "Agent" }}
+          style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}
         >
-          <Alert
-            message={`Order: ${orderCode || ""}`}
-            type="info"
-            style={{ marginBottom: 16 }}
-            showIcon
-          />
-
+          {/* ── SCROLLABLE BODY (everything scrolls together) ── */}
           <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 12,
-            }}
-          >
-            <Form.Item
-              name="customerId"
-              label="Agent ID"
-              rules={[{ required: true }]}
-            >
-              <Input disabled />
-            </Form.Item>
-            <Form.Item
-              name="customerName"
-              label="Recipient"
-              rules={[{ required: true, message: "Required" }]}
-            >
-              <Input placeholder="Full name" />
-            </Form.Item>
-          </div>
-
-          <Form.Item
-            name="contactNumber"
-            label="Phone"
-            rules={[{ required: true, message: "Required" }]}
-          >
-            <Input prefix={<PhoneOutlined />} placeholder="+233 XX XXX XXXX" />
-          </Form.Item>
-
-          <Form.Item
-            name="deliveryAddress"
-            label="Address"
-            rules={[{ required: true, message: "Required" }]}
-          >
-            <Input.TextArea rows={2} placeholder="Delivery location" />
-          </Form.Item>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 12,
-            }}
-          >
-            <Form.Item name="paymentMode" label="Payment">
-              <Select>
-                <Option value="Cash">Cash</Option>
-                <Option value="Mobile Money">Mobile Money</Option>
-                <Option value="Bank Transfer">Bank Transfer</Option>
-                <Option value="Card">Card</Option>
-              </Select>
-            </Form.Item>
-            <Form.Item name="paymentService" label="Network/Bank">
-              <Input placeholder="MTN, Vodafone..." />
-            </Form.Item>
-          </div>
-
-          <Divider style={{ margin: "12px 0", fontSize: 13 }}>
-            Confirm Colours
-          </Divider>
-
-          {/* Only show warning if items with variants are missing selections */}
-          {missingVariantItems.length > 0 && (
-            <Alert
-              type="warning"
-              message={`Select a colour for ${missingVariantItems.length} item(s) before submitting.`}
-              showIcon
-              style={{ marginBottom: 12 }}
-            />
-          )}
-
-          <div
-            style={{
-              maxHeight: 240,
-              overflowY: "auto",
-              marginBottom: 16,
-            }}
             className="clean-scroll"
+            style={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: "auto",
+              padding: "16px 20px",
+            }}
           >
-            {orders.map((item, idx) => {
-              const key = itemKey(item, idx);
-              const opts = variantOptions(item);
-              const sel = getSelectedKey(item, idx);
-              const pid = itemProductId(item);
-              const isLoading = Boolean(variantLoadingMap?.[pid]);
-              const hasRowVariants = hasVariants(item);
+            <Alert
+              message={`Order: ${orderCode || ""}`}
+              type="info"
+              style={{ marginBottom: 16 }}
+              showIcon
+            />
 
-              return (
-                <div
-                  key={key}
-                  style={{
-                    marginBottom: 10,
-                    paddingBottom: 10,
-                    borderBottom: "1px solid #f5f5f5",
-                  }}
-                >
+            {fulfilError && (
+              <Alert
+                message="Products Not Merged"
+                description={fulfilError}
+                type="error"
+                showIcon
+                closable
+                style={{ marginBottom: 16 }}
+                onClose={() => setFulfilError(null)}
+              />
+            )}
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <Form.Item name="customerId" label="Agent ID" rules={[{ required: true }]}>
+                <Input disabled />
+              </Form.Item>
+              <Form.Item name="customerName" label="Recipient" rules={[{ required: true, message: "Required" }]}>
+                <Input placeholder="Full name" />
+              </Form.Item>
+            </div>
+
+            <Form.Item name="contactNumber" label="Phone" rules={[{ required: true, message: "Required" }]}>
+              <Input prefix={<PhoneOutlined />} placeholder="+233 XX XXX XXXX" />
+            </Form.Item>
+
+            <Form.Item name="deliveryAddress" label="Address" rules={[{ required: true, message: "Required" }]}>
+              <Input.TextArea rows={2} placeholder="Delivery location" />
+            </Form.Item>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <Form.Item name="paymentMode" label="Payment">
+                <Select>
+                  <Option value="Cash">Cash</Option>
+                  <Option value="Mobile Money">Mobile Money</Option>
+                  <Option value="Bank Transfer">Bank Transfer</Option>
+                  <Option value="Card">Card</Option>
+                </Select>
+              </Form.Item>
+              <Form.Item name="paymentService" label="Network/Bank">
+                <Input placeholder="MTN, Vodafone..." />
+              </Form.Item>
+            </div>
+
+            <Divider style={{ margin: "12px 0", fontSize: 13 }}>
+              Confirm Colours ({orders.length} item{orders.length !== 1 ? "s" : ""})
+            </Divider>
+
+            {missingVariantItems.length > 0 && (
+              <Alert
+                type="warning"
+                message={`Select a colour for ${missingVariantItems.length} item(s) before submitting.`}
+                showIcon
+                style={{ marginBottom: 12 }}
+              />
+            )}
+
+            {/* ✅ No fixed height — list grows, outer body scrolls */}
+            <div>
+              {orders.map((item, idx) => {
+                const key = itemKey(item, idx);
+                const opts = variantOptions(item);
+                const sel = getSelectedKey(item, idx);
+                const pid = itemProductId(item);
+                const isLoading = Boolean(variantLoadingMap?.[pid]);
+                const hasRowVariants = hasVariants(item);
+                const needsSelection = hasRowVariants && !getSelectedRow(item, idx);
+
+                return (
                   <div
+                    key={key}
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      marginBottom: 4,
+                      marginBottom: 12,
+                      padding: 12,
+                      borderRadius: 8,
+                      border: `1px solid ${needsSelection ? "#ffd591" : "#f0f0f0"}`,
+                      background: needsSelection ? "#fffbe6" : "#fafafa",
                     }}
                   >
-                    <Text strong style={{ fontSize: 13 }}>
-                      {itemName(item)}{" "}
-                      <Text type="secondary">×{itemQty(item)}</Text>
-                    </Text>
-                    <Text style={{ fontSize: 13, color: "#10b981" }}>
-                      ₵{fmt(displayPrice(item, idx))}
-                    </Text>
-                  </div>
-
-                  {hasRowVariants ? (
-                    /* ── Has variants: show colour dropdown ── */
-                    <Select
-                      showSearch
-                      allowClear
-                      placeholder="Choose colour..."
-                      optionFilterProp="label"
-                      value={sel}
-                      onChange={(v) => onVariantChange(key, v)}
-                      options={opts}
-                      loading={isLoading}
-                      disabled={!opts.length && !isLoading}
-                      notFoundContent={
-                        isLoading ? "Loading..." : "No colour found"
-                      }
-                      style={{ width: "100%" }}
-                      size="small"
-                    />
-                  ) : (
-                    /* ── No variants: show info tag ── */
                     <div
                       style={{
                         display: "flex",
+                        justifyContent: "space-between",
                         alignItems: "center",
-                        gap: 6,
-                        padding: "6px 10px",
-                        background: "#f6ffed",
-                        border: "1px solid #b7eb8f",
-                        borderRadius: 6,
-                        fontSize: 12,
-                        color: "#52c41a",
+                        gap: 8,
+                        marginBottom: 8,
                       }}
                     >
-                      <CheckCircleOutlined />
-                      <span>
-                   No colour selction needed
-                      </span>
+                      <Text strong style={{ fontSize: 13, flex: 1, minWidth: 0 }}>
+                        <span
+                          style={{
+                            display: "inline-block",
+                            width: 20,
+                            height: 20,
+                            lineHeight: "20px",
+                            textAlign: "center",
+                            background: "#e6f4ff",
+                            color: "#1677ff",
+                            borderRadius: 6,
+                            fontSize: 11,
+                            marginRight: 8,
+                          }}
+                        >
+                          {idx + 1}
+                        </span>
+                        {itemName(item)} <Text type="secondary">×{itemQty(item)}</Text>
+                      </Text>
+                      <Text style={{ fontSize: 13, color: "#10b981", whiteSpace: "nowrap" }}>
+                        ₵{fmt(displayPrice(item, idx))}
+                      </Text>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+
+                    {hasRowVariants ? (
+                      <Select
+                        showSearch
+                        allowClear
+                        placeholder="Choose colour..."
+                        optionFilterProp="label"
+                        value={sel}
+                        onChange={(v) => onVariantChange(key, v)}
+                        options={opts}
+                        loading={isLoading}
+                        disabled={!opts.length && !isLoading}
+                        notFoundContent={isLoading ? "Loading..." : "No colour found"}
+                        style={{ width: "100%" }}
+                        size="middle"
+                        status={needsSelection ? "warning" : ""}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "6px 10px",
+                          background: "#f6ffed",
+                          border: "1px solid #b7eb8f",
+                          borderRadius: 6,
+                          fontSize: 12,
+                          color: "#52c41a",
+                        }}
+                      >
+                        <CheckCircleOutlined />
+                        <span>No colour selection needed</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
+          {/* ── PINNED FOOTER (always visible) ── */}
           <div
             style={{
+              flexShrink: 0,
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
-              paddingTop: 8,
+              gap: 12,
+              padding: "12px 20px",
               borderTop: "1px solid #f0f0f0",
+              background: "#fff",
+              boxShadow: "0 -2px 8px rgba(0,0,0,0.04)",
             }}
           >
-            <Text strong style={{ fontSize: 16, color: "#10b981" }}>
-              ₵{fmt(total)}
-            </Text>
+            <div>
+              <div style={{ fontSize: 11, color: "#999" }}>Total</div>
+              <Text strong style={{ fontSize: 18, color: "#10b981" }}>
+                ₵{fmt(total)}
+              </Text>
+            </div>
             <Space>
-              <Button onClick={() => setFulfilOpen(false)}>Cancel</Button>
+              <Button
+                onClick={() => {
+                  setFulfilOpen(false);
+                  setFulfilError(null);
+                }}
+              >
+                Cancel
+              </Button>
               <Button
                 type="primary"
                 htmlType="submit"
@@ -1081,23 +1096,16 @@ const AgentOrderModal = ({ orderId, orderCode, isModalVisible, onClose }) => {
                 disabled={!canSubmit || sent}
                 icon={<SendOutlined />}
               >
-                Confirm
+                Confirm{missingVariantItems.length > 0 ? ` (${missingVariantItems.length} left)` : ""}
               </Button>
             </Space>
           </div>
 
-          <Form.Item name="geolocation" hidden>
-            <Input />
-          </Form.Item>
-          <Form.Item name="bCode" hidden>
-            <Input />
-          </Form.Item>
-          <Form.Item name="customerAccountType" hidden>
-            <Input />
-          </Form.Item>
-          <Form.Item name="paymentAccountNumber" hidden>
-            <Input />
-          </Form.Item>
+          {/* Hidden fields */}
+          <Form.Item name="geolocation" hidden><Input /></Form.Item>
+          <Form.Item name="bCode" hidden><Input /></Form.Item>
+          <Form.Item name="customerAccountType" hidden><Input /></Form.Item>
+          <Form.Item name="paymentAccountNumber" hidden><Input /></Form.Item>
         </Form>
       </Modal>
     </>
