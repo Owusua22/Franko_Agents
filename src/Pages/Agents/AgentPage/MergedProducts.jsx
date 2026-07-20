@@ -1,7 +1,7 @@
 // MergedProducts.jsx
 import { useEffect, useState, useMemo, useCallback, memo } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { Table, Spin, Input, Button, Tag, Drawer, Empty } from "antd";
+import { Table, Spin, Input, Button,  Empty } from "antd";
 import { getMergedProducts } from "../../../Redux/Slice/ctp001Slice"; // adjust path
 
 /* ────────── field extractors (matched to your exact API shape) ────────── */
@@ -65,7 +65,7 @@ const MergedProducts = () => {
   const error = useSelector((state) => (state.ctp || state.ctp001 || {}).error?.mergedProducts ?? null);
 
   const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState(null);
+
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [matchFilter, setMatchFilter] = useState("all"); // all | match | differ
@@ -294,20 +294,6 @@ const MergedProducts = () => {
   );
 };
 
-const DetailRow = ({ label, value, mono }) => (
-  <div className="flex items-start justify-between gap-3 py-1.5">
-    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wide shrink-0">
-      {label}
-    </span>
-    <span
-      className={`text-[12px] font-semibold text-gray-800 text-right break-all ${
-        mono ? "font-mono bg-white px-2 py-0.5 rounded border border-gray-200" : ""
-      }`}
-    >
-      {value}
-    </span>
-  </div>
-);
 
 const AntdOverrides = () => (
   <style>{`

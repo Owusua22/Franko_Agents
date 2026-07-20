@@ -6,6 +6,7 @@ import AgentHome from "./Pages/Agents/AgentHome";
 import AgentDashboard from "./Pages/Agents/AgentPage/AgentDashboard";
 import AgentOrders from "./Pages/Agents/AgentPage/AgentOrders";
 import MergedProducts from "./Pages/Agents/AgentPage/MergedProducts";
+import OrdersPage from "./Pages/Agents/AgentPage/SalesmateOrder";
 
 function App() {
   return (
@@ -46,6 +47,14 @@ function App() {
           element={
             <AgentHome>
               <MergedProducts />
+            </AgentHome>
+          }
+        />
+        <Route
+          path="/agent/salesmateorders"
+          element={
+            <AgentHome>
+              <OrdersPage />
             </AgentHome>
           }
         />

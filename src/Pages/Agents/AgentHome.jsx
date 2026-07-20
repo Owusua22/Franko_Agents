@@ -179,6 +179,7 @@ const selectedKey = useMemo(() => {
   const path = location.pathname;
   if (path.includes('/orders')) return '2';
   if (path.includes('/products')) return '3';
+  if (path.includes('/salesmateorders')) return '4';
   return '1'; // dashboard
 }, [location.pathname]);
   const menuItems = [
@@ -200,6 +201,12 @@ const selectedKey = useMemo(() => {
       label: 'Products',
       onClick: () => navigate('/agent/products'),
     },
+    {
+      key: '4',
+      icon: <ShoppingOutlined style={{ fontSize: 17 }} />,
+      label: 'Salesmate Orders',
+      onClick: () => navigate('/agent/salesmateorders'),
+    }
   ].map((item) => ({ ...item, className: 'agent-nav-item' }));
 
 

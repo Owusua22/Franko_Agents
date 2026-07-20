@@ -5,6 +5,7 @@ import AgentDashboard from './AgentDashboard';
 import AgentOrders from './AgentOrders';
 import AgentHome from '../AgentHome';
 import MergedProducts from './MergedProducts';
+import OrdersPage from './SalesmateOrder';
 
 
 const AgentPage = () => {
@@ -20,6 +21,8 @@ const AgentPage = () => {
         return <AgentOrders />;
         case '/agent/products':
         return <MergedProducts/>;
+        case '/agent/salesmateorders':
+        return <OrdersPage />;
       case '/agent':
         return <Navigate to="/agent/dashboard" />;
       default:
