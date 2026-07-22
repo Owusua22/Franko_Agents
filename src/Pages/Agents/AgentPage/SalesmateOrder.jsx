@@ -9,7 +9,7 @@ import {
 } from "../../../Redux/Slice/ctp001Slice";
 
 /* ─────────────────────────────────────────────
-   Small UI helpers
+Small UI helpers
 ───────────────────────────────────────────── */
 
 const Field = ({ label, children }) => (
@@ -37,35 +37,22 @@ function LoaderInline({ size = 16 }) {
 
 const isoStartOfDay = (yyyyMmDd) =>
   yyyyMmDd ? `${yyyyMmDd}T00:00:00` : undefined;
+
 const isoEndOfDay = (yyyyMmDd) =>
   yyyyMmDd ? `${yyyyMmDd}T23:59:59` : undefined;
 
 const normalizeId = (v) => String(v ?? "").trim();
 const containsCI = (text, q) =>
-  String(text ?? "")
-    .toLowerCase()
-    .includes(String(q ?? "").toLowerCase());
+  String(text ?? "").toLowerCase().includes(String(q ?? "").toLowerCase());
 
-/**
- * Formats an ISO / date string to a human-readable date + time string.
- * e.g. "2026-07-08T17:39:33.93" → "08/07/2026, 17:39:33"
- */
-const formatDateTime = (dateString) => {
+const formatDate = (dateString) => {
   if (!dateString) return "-";
+
   try {
     const d = new Date(dateString);
     if (Number.isNaN(d.getTime())) return String(dateString);
 
-    // Use locale formatting with explicit date + time parts
-    return d.toLocaleString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
+    return d.toLocaleDateString();
   } catch {
     return String(dateString);
   }
@@ -85,33 +72,9 @@ const formatCurrency = (amount) => {
 const sumOrderTotal = (order) => {
   const items = Array.isArray(order?.items) ? order.items : [];
   return items.reduce(
-    (acc, it) =>
-      acc + Number(it?.price || 0) * Number(it?.quantity || 0),
+    (acc, it) => acc + Number(it?.price || 0) * Number(it?.quantity || 0),
     0
   );
-};
-
-/**
- * Picks the earliest createAt across all items,
- * falling back to the first item's createAt, then orderDate.
- */
-const getOrderCreatedAt = (order) => {
-  const items = Array.isArray(order?.items) ? order.items : [];
-
-  const timestamps = items
-    .map((it) => it?.createAt)
-    .filter(Boolean)
-    .map((s) => new Date(s))
-    .filter((d) => !Number.isNaN(d.getTime()));
-
-  if (timestamps.length === 0) {
-    // fall back to orderDate if no createAt found
-    return order?.orderDate ?? null;
-  }
-
-  // Return the earliest timestamp as an ISO string
-  const earliest = new Date(Math.min(...timestamps.map((d) => d.getTime())));
-  return earliest.toISOString();
 };
 
 export default function OrdersPage() {
@@ -121,37 +84,34 @@ export default function OrdersPage() {
   const loading = useSelector(selectCTP001OrdersLoading);
   const error = useSelector(selectCTP001OrdersError);
 
-  // logged-in agent/customer id
-  const n1UId = useSelector(
-    (s) => s?.customer?.currentCustomerDetails?.n1UId
-  );
+  const n1UId = useSelector((s) => s?.customer?.currentCustomerDetails?.n1UId);
 
-  // server filters
+  // Server filters
   const [CartId, setCartId] = useState("");
   const [StartDate, setStartDate] = useState("");
   const [EndDate, setEndDate] = useState("");
 
-  // client search filters
+  // Client-side search filters
   const [searchCustomerName, setSearchCustomerName] = useState("");
   const [searchProductName, setSearchProductName] = useState("");
 
-  // pagination
+  // Pagination
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  const query = useMemo(() => {
-    return {
-      CartId: CartId.trim() || undefined,
-      StartDate: StartDate ? isoStartOfDay(StartDate) : undefined,
-      EndDate: EndDate ? isoEndOfDay(EndDate) : undefined,
-    };
-  }, [CartId, StartDate, EndDate]);
+  const query = useMemo(() => ({
+    CartId: CartId.trim() || undefined,
+    StartDate: StartDate ? isoStartOfDay(StartDate) : undefined,
+    EndDate: EndDate ? isoEndOfDay(EndDate) : undefined,
+  }), [CartId, StartDate, EndDate]);
 
+  // Fetch orders when n1UId or query changes
   useEffect(() => {
-    if (n1UId) dispatch(getCTP001Orders(query));
+    if (n1UId) {
+      dispatch(getCTP001Orders(query));
+    }
     return () => dispatch(clearCTP001Orders());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatch, n1UId]);
+  }, [dispatch, n1UId, query]);
 
   const onSearch = (e) => {
     e.preventDefault();
@@ -169,7 +129,7 @@ export default function OrdersPage() {
     if (n1UId) dispatch(getCTP001Orders({}));
   };
 
-  // Safety net: only show orders for this agent/customer id
+  // Only show orders belonging to current user
   const myOrders = useMemo(() => {
     const me = normalizeId(n1UId);
     if (!me) return [];
@@ -178,31 +138,29 @@ export default function OrdersPage() {
     );
   }, [ordersFromApi, n1UId]);
 
-  // Apply client-side search
+  // Client-side filtering by customer name and product name
   const searchedOrders = useMemo(() => {
     const qCustomer = searchCustomerName.trim();
     const qProduct = searchProductName.trim();
 
     if (!qCustomer && !qProduct) return myOrders;
 
-    return (myOrders || []).filter((order) => {
-      const customerOk = qCustomer
-        ? containsCI(order?.customerName, qCustomer)
-        : true;
+    return myOrders.filter((order) => {
+      const customerOk = !qCustomer || containsCI(order?.customerName, qCustomer);
 
       const items = Array.isArray(order?.items) ? order.items : [];
-      const productOk = qProduct
-        ? items.some((it) => containsCI(it?.variantName, qProduct))
-        : true;
+      const productOk =
+        !qProduct ||
+        items.some((it) => containsCI(it?.variantName, qProduct));
 
       return customerOk && productOk;
     });
   }, [myOrders, searchCustomerName, searchProductName]);
 
-  // Pagination
   const totalOrders = searchedOrders.length;
   const totalPages = Math.max(1, Math.ceil(totalOrders / pageSize));
 
+  // Prevent invalid page numbers
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
@@ -214,15 +172,14 @@ export default function OrdersPage() {
 
   return (
     <div style={{ padding: 16, display: "grid", gap: 16 }}>
-      {/* spinner keyframes */}
+      {/* Keyframes for loader */}
       <style>{`
         @keyframes spin {
           from { transform: rotate(0deg); }
-          to   { transform: rotate(360deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
 
-      {/* ── Header ── */}
       <header
         style={{
           display: "flex",
@@ -248,13 +205,12 @@ export default function OrdersPage() {
             </span>
           )}
         </div>
-
         <div style={{ fontSize: 12, opacity: 0.8 }}>
           Showing {pagedOrders.length} of {totalOrders} order(s)
         </div>
       </header>
 
-      {/* ── Filters ── */}
+      {/* Filters */}
       <form
         onSubmit={onSearch}
         style={{
@@ -267,7 +223,7 @@ export default function OrdersPage() {
           background: "#fff",
         }}
       >
-        <Field label="Agent ID">
+        <Field label="Agent/Customer ID (n1UId)">
           <input
             value={n1UId || ""}
             readOnly
@@ -276,9 +232,23 @@ export default function OrdersPage() {
               padding: "8px 10px",
               borderRadius: 8,
               border: "1px solid #d1d5db",
-              fontSize: 14,
               background: "#f9fafb",
               color: "#374151",
+              fontSize: 14,
+            }}
+          />
+        </Field>
+
+        <Field label="Cart ID">
+          <input
+            value={CartId}
+            onChange={(e) => setCartId(e.target.value)}
+            placeholder="Enter Cart ID"
+            style={{
+              padding: "8px 10px",
+              borderRadius: 8,
+              border: "1px solid #d1d5db",
+              fontSize: 14,
             }}
           />
         </Field>
@@ -380,7 +350,6 @@ export default function OrdersPage() {
         </div>
       </form>
 
-      {/* ── Error ── */}
       {error && (
         <div
           style={{
@@ -395,11 +364,9 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* ── Loader ── */}
       {loading && (
         <div
           style={{
-            position: "relative",
             border: "1px solid #e5e7eb",
             borderRadius: 10,
             padding: 18,
@@ -408,14 +375,11 @@ export default function OrdersPage() {
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <LoaderInline size={18} />
-            <div style={{ fontSize: 13, opacity: 0.8 }}>
-              Fetching orders…
-            </div>
+            <div style={{ fontSize: 13, opacity: 0.8 }}>Fetching orders…</div>
           </div>
         </div>
       )}
 
-      {/* ── Empty state ── */}
       {!loading && pagedOrders.length === 0 && (
         <div
           style={{
@@ -431,7 +395,6 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* ── Table ── */}
       {!loading && pagedOrders.length > 0 && (
         <section
           style={{
@@ -441,110 +404,53 @@ export default function OrdersPage() {
             background: "#fff",
           }}
         >
-          <table
-            style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}
-          >
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "#f9fafb" }}>
-                {[
-                  "#",
-                  "Order Date & Time", // ← renamed
-                  "Customer Name",
-                  "Delivery Address",
-                  "Products",
-                  "Order Total",
-                ].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      textAlign: h.includes("Total") ? "right" : "left",
-                      padding: "10px 12px",
-                      borderBottom: "1px solid #e5e7eb",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {h}
-                  </th>
-                ))}
+                {["#", "Order Date", "Customer Name", "Delivery Address", "Products", "Order Total"].map(
+                  (h) => (
+                    <th
+                      key={h}
+                      style={{
+                        textAlign: h.includes("Total") ? "right" : "left",
+                        padding: "10px 12px",
+                        borderBottom: "1px solid #e5e7eb",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {h}
+                    </th>
+                  )
+                )}
               </tr>
             </thead>
 
             <tbody>
               {pagedOrders.map((order, idx) => {
-                const items = Array.isArray(order?.items)
-                  ? order.items
-                  : [];
+                const items = Array.isArray(order?.items) ? order.items : [];
                 const orderTotal = sumOrderTotal(order);
                 const rowNumber = (page - 1) * pageSize + idx + 1;
 
-                // ← KEY CHANGE: use createAt from items, not orderDate
-                const createdAt = getOrderCreatedAt(order);
-
                 return (
-                  <tr
-                    key={`${order?.customerId}-${createdAt}-${rowNumber}`}
-                  >
-                    {/* # */}
-                    <td
-                      style={{
-                        padding: "10px 12px",
-                        borderBottom: "1px solid #f1f5f9",
-                        verticalAlign: "top",
-                      }}
-                    >
+                  <tr key={`${order?.customerId}-${order?.orderDate}`}>
+                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", verticalAlign: "top" }}>
                       {rowNumber}
                     </td>
-
-                    {/* Order Date & Time ← shows createAt */}
-                    <td
-                      style={{
-                        padding: "10px 12px",
-                        borderBottom: "1px solid #f1f5f9",
-                        whiteSpace: "nowrap",
-                        verticalAlign: "top",
-                      }}
-                    >
-                      {formatDateTime(createdAt)}
+                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", whiteSpace: "nowrap", verticalAlign: "top" }}>
+                      {formatDate(order?.orderDate)}
                     </td>
-
-                    {/* Customer Name */}
-                    <td
-                      style={{
-                        padding: "10px 12px",
-                        borderBottom: "1px solid #f1f5f9",
-                        verticalAlign: "top",
-                      }}
-                    >
+                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", verticalAlign: "top" }}>
                       {order?.customerName || "-"}
                     </td>
-
-                    {/* Delivery Address */}
-                    <td
-                      style={{
-                        padding: "10px 12px",
-                        borderBottom: "1px solid #f1f5f9",
-                        verticalAlign: "top",
-                        maxWidth: 260,
-                      }}
-                    >
-                      <div
-                        style={{ whiteSpace: "normal", wordBreak: "break-word" }}
-                      >
+                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", verticalAlign: "top", maxWidth: 260 }}>
+                      <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>
                         {order?.deliveryAddress || "-"}
                       </div>
                     </td>
 
-                    {/* Products */}
-                    <td
-                      style={{
-                        padding: "10px 12px",
-                        borderBottom: "1px solid #f1f5f9",
-                        verticalAlign: "top",
-                        minWidth: 320,
-                      }}
-                    >
+                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9", verticalAlign: "top", minWidth: 320 }}>
                       {items.length === 0 ? (
                         <span style={{ opacity: 0.7 }}>No items</span>
                       ) : (
@@ -564,32 +470,15 @@ export default function OrdersPage() {
                                   background: "#fff",
                                 }}
                               >
-                                <div
-                                  style={{ fontWeight: 600, lineHeight: 1.2 }}
-                                >
+                                <div style={{ fontWeight: 600, lineHeight: 1.2 }}>
                                   {it?.variantName || "Unknown product"}
                                 </div>
-
-                                <div
-                                  style={{
-                                    fontSize: 12,
-                                    opacity: 0.85,
-                                    marginTop: 4,
-                                  }}
-                                >
-                                  Qty: <b>{qty}</b> · Unit:{" "}
-                                  {formatCurrency(price)} · Total:{" "}
+                                <div style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>
+                                  Qty: <b>{qty}</b> • Unit: {formatCurrency(price)} • Total:{" "}
                                   <b>{formatCurrency(lineTotal)}</b>
                                 </div>
-
                                 {it?.color && (
-                                  <div
-                                    style={{
-                                      fontSize: 12,
-                                      opacity: 0.75,
-                                      marginTop: 2,
-                                    }}
-                                  >
+                                  <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
                                     Color: {it.color}
                                   </div>
                                 )}
@@ -600,7 +489,6 @@ export default function OrdersPage() {
                       )}
                     </td>
 
-                    {/* Order Total */}
                     <td
                       style={{
                         padding: "10px 12px",
@@ -620,7 +508,6 @@ export default function OrdersPage() {
         </section>
       )}
 
-      {/* ── Pagination ── */}
       {!loading && totalOrders > 0 && (
         <div
           style={{
@@ -635,55 +522,19 @@ export default function OrdersPage() {
           }}
         >
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button
-              onClick={() => setPage(1)}
-              disabled={page === 1}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                background: "#fff",
-              }}
-            >
+            <button onClick={() => setPage(1)} disabled={page === 1} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff" }}>
               First
             </button>
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                background: "#fff",
-              }}
-            >
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff" }}>
               Prev
             </button>
             <span style={{ fontSize: 13 }}>
               Page <b>{page}</b> / <b>{totalPages}</b>
             </span>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                background: "#fff",
-              }}
-            >
+            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff" }}>
               Next
             </button>
-            <button
-              onClick={() => setPage(totalPages)}
-              disabled={page === totalPages}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                background: "#fff",
-              }}
-            >
+            <button onClick={() => setPage(totalPages)} disabled={page === totalPages} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff" }}>
               Last
             </button>
           </div>
@@ -696,11 +547,7 @@ export default function OrdersPage() {
                 setPageSize(Number(e.target.value));
                 setPage(1);
               }}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #d1d5db" }}
             >
               {[5, 10, 20, 50].map((n) => (
                 <option key={n} value={n}>
